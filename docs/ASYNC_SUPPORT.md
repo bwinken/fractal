@@ -432,9 +432,9 @@ result = await agent.run("query")
 
 ## Additional Resources
 
-- [examples/async_example.py](examples/async_example.py) - Complete async examples
-- [examples/fastapi_example.py](examples/fastapi_example.py) - FastAPI integration
-- [test_async.py](test_async.py) - Async test suite
+- [examples/async_example.py](../examples/async_example.py) - Complete async examples
+- [examples/fastapi_example.py](../examples/fastapi_example.py) - FastAPI integration
+- [tests/integration/test_async.py](../tests/integration/test_async.py) - Async test suite
 
 ## Summary
 

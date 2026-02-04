@@ -137,7 +137,7 @@ class AgentToolkit:
             description = f"Delegate tasks to {agent_name} (subordinate agent)"
 
         # Create async wrapper that calls the other agent
-        async def agent_caller(query: str) -> AgentReturnPart:
+        async def agent_caller(query: str) -> str:
             """
             Call another agent with a query.
 
@@ -172,11 +172,11 @@ class AgentToolkit:
                     calling_agent.tracing.end_delegation(
                         from_agent=calling_agent.name,
                         to_agent=agent.name,
-                        result=result,
+                        result=result.content,
                         success=result.success if hasattr(result, 'success') else True
                     )
 
-                    return result
+                    return result.content
                 except Exception as e:
                     # Record failed delegation
                     calling_agent.tracing.end_delegation(
@@ -193,7 +193,7 @@ class AgentToolkit:
             else:
                 # No tracing - just run normally
                 result = await agent.run(query)
-                return result
+                return result.content
 
         # Set the docstring for schema generation
         agent_caller.__doc__ = f"""{description}

@@ -379,7 +379,7 @@ async def query(q: str):
 
 ## Example: Complete Multi-Agent System
 
-See [examples/fastapi_multiagent.py](examples/fastapi_multiagent.py) for a complete working example with:
+See [examples/fastapi_multiagent.py](../examples/fastapi_multiagent.py) for a complete working example with:
 - Router agent coordinating 3 specialists
 - FastAPI lifespan management
 - Direct and delegated access patterns

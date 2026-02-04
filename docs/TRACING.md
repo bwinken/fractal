@@ -412,7 +412,7 @@ except Exception as e:
 
 ## 完整示例
 
-查看 [examples/tracing_example.py](examples/tracing_example.py) 獲取完整的使用示例。
+查看 [examples/tracing_example.py](../examples/tracing_example.py) 獲取完整的使用示例。
 
 運行示例：
 ```bash
