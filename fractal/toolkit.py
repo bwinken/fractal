@@ -279,7 +279,13 @@ class AgentToolkit:
         schema['function']['name'] = tool_name
         self._tool_schemas[tool_name] = schema
 
-    def register_delegate(self, agent: 'BaseAgent', tool_name: Optional[str] = None, description: Optional[str] = None):
+    def register_delegate(
+        self,
+        agent: 'BaseAgent',
+        tool_name: Optional[str] = None,
+        description: Optional[str] = None,
+        parameters: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         """
         Register another agent as a delegate for task delegation.
 
@@ -290,15 +296,34 @@ class AgentToolkit:
             agent (BaseAgent): The subordinate agent to register for delegation
             tool_name (str): Optional name for the delegation tool (defaults to "delegate_to_{agent.name}")
             description (str): Optional description for the tool
+            parameters (dict): Optional dict defining custom tool parameters.
+                When omitted, the tool accepts a single ``query`` string.
+                When provided, the LLM sees the specified parameters and the
+                delegated agent receives the full dict via ``agent.run(dict)``.
+
+                Each key is a parameter name; value is a dict with:
+                - ``type`` (str): one of "str", "int", "float", "bool", "list", "dict"
+                - ``description`` (str): description shown to the LLM
+                - ``required`` (bool, default True): whether the parameter is required
 
         Example::
 
-            # In coordinator agent's __init__:
-            specialist = SpecialistAgent()
-            self.register_delegate(
-                specialist,
-                tool_name="ask_specialist",
-                description="Delegate complex queries to the specialist agent"
+            # Simple delegation (default: single query string)
+            coordinator.register_delegate(
+                math_agent,
+                tool_name="calculate",
+                description="Perform calculations"
+            )
+
+            # Structured delegation (custom parameters)
+            coordinator.register_delegate(
+                data_agent,
+                tool_name="query_data",
+                description="Query the data warehouse",
+                parameters={
+                    "sql": {"type": "str", "description": "SQL query to execute"},
+                    "limit": {"type": "int", "description": "Max rows", "required": False},
+                }
             )
         """
         # Generate tool name if not provided
@@ -311,17 +336,31 @@ class AgentToolkit:
             agent_name = getattr(agent, 'name', 'another agent')
             description = f"Delegate tasks to {agent_name} (subordinate agent)"
 
+        # Validate custom parameters if provided
+        if parameters is not None:
+            from .parser import _map_python_type_to_json
+            _valid_types = {'str', 'string', 'int', 'integer', 'float', 'number',
+                            'bool', 'boolean', 'list', 'array', 'dict', 'object'}
+            for p_name, p_spec in parameters.items():
+                p_type = p_spec.get('type', '').strip().lower()
+                if p_type not in _valid_types:
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"has unsupported type '{p_spec.get('type', '')}'. "
+                        f"Supported types: str, int, float, bool, list, dict."
+                    )
+
+        # Determine whether to use simple (query) or structured (kwargs) mode
+        use_custom_params = parameters is not None
+
         # Create async wrapper that calls the other agent
-        async def agent_caller(query: str) -> str:
-            """
-            Call another agent with a query.
+        async def agent_caller(**kwargs) -> str:
+            # Determine input for the delegated agent
+            if use_custom_params:
+                agent_input = kwargs  # pass full dict
+            else:
+                agent_input = kwargs.get('query', '')  # pass single string
 
-            Args:
-                query (str): Query to send to the agent
-
-            Returns:
-                Agent's response
-            """
             # Get the calling agent (if available through target)
             calling_agent = self._target
 
@@ -335,13 +374,13 @@ class AgentToolkit:
                 calling_agent.tracing.start_delegation(
                     from_agent=calling_agent.name,
                     to_agent=agent.name,
-                    query=query,
+                    query=agent_input,
                     metadata={'tool_name': tool_name}
                 )
 
                 try:
                     # Execute the delegated agent
-                    result = await agent.run(query)
+                    result = await agent.run(agent_input)
 
                     # Record successful delegation end
                     calling_agent.tracing.end_delegation(
@@ -367,18 +406,8 @@ class AgentToolkit:
                     agent.tracing = original_tracing
             else:
                 # No tracing - just run normally
-                result = await agent.run(query)
+                result = await agent.run(agent_input)
                 return result.content
-
-        # Set the docstring for schema generation
-        agent_caller.__doc__ = f"""{description}
-
-        Args:
-            query (str): Query or task to delegate to the agent
-
-        Returns:
-            Response from the agent
-        """
 
         # Mark as tool and register
         agent_caller._is_agent_tool = True
@@ -392,11 +421,52 @@ class AgentToolkit:
 
         self._tools[tool_name] = agent_caller
 
-        # Generate and store schema
-        from .parser import function_to_tool_schema
-        schema = function_to_tool_schema(agent_caller)
-        # Override the function name in schema with our custom tool_name
-        schema['function']['name'] = tool_name
+        # Build tool schema
+        if use_custom_params:
+            # Custom parameters → build schema from parameters dict
+            from .parser import _map_python_type_to_json
+            properties = {}
+            required_params = []
+            for p_name, p_spec in parameters.items():
+                properties[p_name] = {
+                    "type": _map_python_type_to_json(p_spec.get("type", "str")),
+                    "description": p_spec.get("description", ""),
+                }
+                if p_spec.get("required", True):
+                    required_params.append(p_name)
+
+            schema = {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required_params,
+                    },
+                },
+            }
+        else:
+            # Default → single query string
+            schema = {
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Query or task to delegate to the agent",
+                            },
+                        },
+                        "required": ["query"],
+                    },
+                },
+            }
+
         self._tool_schemas[tool_name] = schema
 
     def get_tools(self) -> Dict[str, Callable]:

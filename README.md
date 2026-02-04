@@ -206,18 +206,10 @@ asyncio.run(main())
 Register one agent as a delegate of another with `register_delegate()`:
 
 ```python
-class Coordinator(BaseAgent):
-    def __init__(self):
-        super().__init__(
-            name="Coordinator",
-            system_prompt="Delegate math tasks to the calculator.",
-            client=AsyncOpenAI()
-        )
-
 coordinator = Coordinator()
 math_agent = MathAgent()
 
-# Register MathAgent as a callable tool for Coordinator
+# Simple: delegate receives a single query string
 coordinator.register_delegate(
     math_agent,
     tool_name="calculate",
@@ -225,6 +217,22 @@ coordinator.register_delegate(
 )
 
 result = await coordinator.run("Compute (3 + 4) * 5")
+```
+
+For more control, use `parameters` to define structured inputs — the delegate receives a dict:
+
+```python
+coordinator.register_delegate(
+    data_agent,
+    tool_name="query_data",
+    description="Query the data warehouse",
+    parameters={
+        "sql": {"type": "str", "description": "SQL query to execute"},
+        "limit": {"type": "int", "description": "Max rows to return", "required": False},
+    }
+)
+# LLM calls: query_data(sql="SELECT ...", limit=100)
+# data_agent.run({"sql": "SELECT ...", "limit": 100})
 ```
 
 Delegation can be nested to arbitrary depth (A -> B -> C -> ...). When tracing is enabled on the top-level agent, tracing automatically propagates through the entire delegation chain.
@@ -309,7 +317,7 @@ agent = BaseAgent(
 | `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
 | `reset()` | Clear conversation history |
 | `add_tool(func, name=None, terminate=False)` | Register a standalone function as a tool |
-| `register_delegate(agent, tool_name=None, description=None)` | Register an agent as a delegate tool |
+| `register_delegate(agent, tool_name=None, description=None, parameters=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |
 | `get_tool_schemas()` | Get OpenAI-compatible tool schemas |
 | `await execute_tool(tool_name, **kwargs)` | Execute a registered tool by name |

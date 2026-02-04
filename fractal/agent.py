@@ -746,7 +746,8 @@ class BaseAgent:
         self,
         agent: 'BaseAgent',
         tool_name: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        parameters: Optional[Dict[str, Any]] = None,
     ):
         """
         Register a subordinate agent for task delegation.
@@ -760,22 +761,26 @@ class BaseAgent:
             agent (BaseAgent): The subordinate agent to register for delegation
             tool_name (str): Optional name for the delegation tool (defaults to "delegate_to_{agent.name}")
             description (str): Optional description for the tool
+            parameters (dict): Optional custom parameters for the delegate tool.
+                When omitted, the tool accepts a single ``query`` string.
+                When provided, the LLM sees the specified parameters and the
+                delegated agent receives the full dict via ``agent.run(dict)``.
 
         Example::
 
-            class CoordinatorAgent(BaseAgent):
-                def __init__(self, specialist_agent):
-                    super().__init__(
-                        name="Coordinator",
-                        system_prompt="You coordinate tasks."
-                    )
+            # Simple delegation (single query string)
+            self.register_delegate(specialist, tool_name="ask_specialist")
 
-                    # Register specialist as delegate
-                    self.register_delegate(
-                        specialist_agent,
-                        tool_name="ask_specialist",
-                        description="Delegate to specialist for complex queries"
-                    )
+            # Structured delegation (custom parameters)
+            self.register_delegate(
+                data_agent,
+                tool_name="query_data",
+                description="Query the data warehouse",
+                parameters={
+                    "sql": {"type": "str", "description": "SQL query to execute"},
+                    "limit": {"type": "int", "description": "Max rows", "required": False},
+                }
+            )
         """
-        self.toolkit.register_delegate(agent, tool_name, description)
+        self.toolkit.register_delegate(agent, tool_name, description, parameters)
 
