@@ -352,6 +352,68 @@ class MyAgent(BaseAgent):
 - `name` - Override the tool name (default: method name)
 - `terminate` - If `True`, the agent loop stops after this tool executes
 
+### Tool Argument Constraints
+
+Tool parameters are converted to [OpenAI tool schemas](https://platform.openai.com/docs/guides/function-calling) via Google-style docstrings. The framework validates tools at registration time to catch common mistakes early.
+
+**Supported parameter types:**
+
+| Python type | JSON Schema type | Notes |
+|-------------|-----------------|-------|
+| `str` | `string` | |
+| `int` | `integer` | |
+| `float` | `number` | |
+| `bool` | `boolean` | |
+| `list` | `array` | No `items` schema — LLM won't know the element type |
+| `dict` | `object` | No `properties` schema — LLM won't know the key/value types |
+
+**Raises `TypeError` (blocks registration):**
+- `tuple`, `set`, `bytes`, `datetime` — no JSON Schema equivalent
+- Pydantic `BaseModel` subclasses — LLM arguments are raw JSON, not model instances
+- Any custom class — same reason
+
+```python
+@tool
+def bad_tool(profile: UserProfile, tags: tuple) -> str:
+    """Process data."""
+    return "result"
+
+agent.add_tool(bad_tool)
+# TypeError: Tool 'bad_tool': parameter 'profile' has unsupported type annotation
+#   'UserProfile'. Supported types: str, int, float, bool, list, dict.
+```
+
+**Issues `UserWarning` (registration succeeds):**
+- Missing docstring — LLM gets no tool description
+- Parameter not in docstring `Args:` section — LLM gets no parameter description
+- Type annotation vs docstring type mismatch — schema uses docstring type, may cause runtime errors
+
+```python
+@tool
+def mismatch_tool(count: int) -> str:
+    """Search.
+
+    Args:
+        count (str): Number of results    # docstring says str, annotation says int!
+
+    Returns:
+        Results
+    """
+    return str(count)
+
+agent.add_tool(mismatch_tool)
+# UserWarning: Tool 'mismatch_tool': parameter 'count' type mismatch —
+#   annotation says 'int' (→ integer) but docstring says 'string'.
+#   The docstring type will be used in the tool schema.
+```
+
+**Other constraints:**
+- Type information is read from the **docstring `Args:` section**, not from Python type annotations. Annotations are used for validation only.
+- `Optional[str]` is fine — the framework unwraps it to `str`. But `Union[str, int]` is not well supported.
+- Default values make a parameter optional (not in `required`), but the default value itself is **not** included in the schema — the LLM won't see it.
+- If a parameter is missing from the `Args:` section, the LLM receives an empty description.
+- If a function has no docstring at all, the tool description defaults to the function name.
+
 ### AgentResult
 
 Returned by `agent.run()`.

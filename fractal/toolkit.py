@@ -2,10 +2,116 @@
 Agent toolkit for registering and managing tools.
 """
 import inspect
+import typing
+import warnings
 from typing import Any, Callable, Dict, List, Optional
 from functools import wraps
-from .parser import function_to_tool_schema
+from .parser import function_to_tool_schema, parse_google_docstring
 from .models import ToolResult
+
+# Types that map cleanly to JSON Schema
+_SUPPORTED_TYPES = {str, int, float, bool, list, dict}
+
+# Mapping from Python type -> expected JSON Schema type (for mismatch detection)
+_TYPE_TO_JSON_SCHEMA = {
+    str: "string",
+    int: "integer",
+    float: "number",
+    bool: "boolean",
+    list: "array",
+    dict: "object",
+}
+
+
+def _unwrap_type(annotation: Any) -> Any:
+    """Unwrap Optional / Union / generic aliases to the base type."""
+    origin = typing.get_origin(annotation)
+
+    # Optional[X] is Union[X, None]
+    if origin is typing.Union:
+        args = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return _unwrap_type(args[0])
+        return None  # multi-type Union — skip validation
+
+    # list[X], dict[X, Y], typing.List[X], typing.Dict[X, Y]
+    if origin in (list, dict):
+        return origin
+
+    return annotation
+
+
+def _validate_tool_function(func: Callable, tool_name: str) -> None:
+    """Validate a tool function at registration time.
+
+    Raises TypeError for:
+    - Unsupported parameter type annotations (tuple, set, BaseModel, etc.)
+
+    Issues warnings for:
+    - Missing docstring (LLM gets no tool description)
+    - Parameters without docstring entries (LLM gets no param description)
+    - Type annotation vs docstring type mismatch
+    """
+    # 1. Docstring presence
+    doc = inspect.getdoc(func)
+    if not doc:
+        warnings.warn(
+            f"Tool '{tool_name}': missing docstring. "
+            f"The LLM will receive no description for this tool.",
+            UserWarning,
+            stacklevel=4,
+        )
+        return  # can't check params without docstring
+
+    # 2. Parse docstring to see which params are documented
+    parsed = parse_google_docstring(func)
+    sig = inspect.signature(func)
+
+    for param_name, param in sig.parameters.items():
+        if param_name == "self":
+            continue
+
+        # Undocumented parameter
+        if param_name not in parsed["parameters"]:
+            warnings.warn(
+                f"Tool '{tool_name}': parameter '{param_name}' has no description "
+                f"in the docstring Args section. The LLM will not know what this "
+                f"parameter is for.",
+                UserWarning,
+                stacklevel=4,
+            )
+
+        # Type annotation checks
+        annotation = param.annotation
+        if annotation is inspect.Parameter.empty:
+            continue
+
+        base = _unwrap_type(annotation)
+        if base is None:
+            continue  # multi-type Union, skip
+
+        # Unsupported type → raise TypeError
+        if base not in _SUPPORTED_TYPES:
+            type_name = getattr(base, "__name__", str(base))
+            raise TypeError(
+                f"Tool '{tool_name}': parameter '{param_name}' has unsupported "
+                f"type annotation '{type_name}'. "
+                f"Supported types: str, int, float, bool, list, dict."
+            )
+
+        # Type hint vs docstring type mismatch → warning
+        if param_name in parsed["parameters"]:
+            docstring_json_type = parsed["parameters"][param_name].get("type")
+            hint_json_type = _TYPE_TO_JSON_SCHEMA.get(base)
+            if docstring_json_type and hint_json_type and docstring_json_type != hint_json_type:
+                warnings.warn(
+                    f"Tool '{tool_name}': parameter '{param_name}' type mismatch — "
+                    f"annotation says '{base.__name__}' (→ {hint_json_type}) "
+                    f"but docstring says '{docstring_json_type}'. "
+                    f"The docstring type will be used in the tool schema.",
+                    UserWarning,
+                    stacklevel=4,
+                )
 
 
 class AgentToolkit:
@@ -164,6 +270,9 @@ class AgentToolkit:
             func._tool_name = tool_name
             func._tool_terminate = should_terminate
             func._original_func = func
+
+        # Validate before registering
+        _validate_tool_function(original_func, tool_name)
 
         # Generate and store schema
         schema = function_to_tool_schema(original_func)
@@ -333,6 +442,9 @@ class AgentToolkit:
 
                 # Store termination flag
                 self._tool_terminate[tool_name] = getattr(attr, '_tool_terminate', False)
+
+                # Validate at registration time
+                _validate_tool_function(attr._original_func, tool_name)
 
                 # Generate schema from the original unbound function
                 schema = function_to_tool_schema(attr._original_func)
