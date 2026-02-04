@@ -2,7 +2,7 @@
 Pydantic models for agent communication and data exchange.
 """
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ToolResult(BaseModel):
@@ -17,8 +17,7 @@ class ToolResult(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata about the tool execution")
     error: Optional[str] = Field(default=None, description="Error message if tool execution failed")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class AgentResult(BaseModel):
@@ -33,8 +32,7 @@ class AgentResult(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata about the agent's response")
     success: bool = Field(default=True, description="Whether the agent execution was successful")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 # Backwards-compatible aliases

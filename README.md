@@ -16,7 +16,8 @@ Coordinator
 - **Recursive Delegation** - Agents delegate sub-tasks to other agents, forming tree-shaped workflows
 - **OpenAI Compatible** - Works with OpenAI API and any OpenAI-compatible endpoint (Azure, Ollama, LM Studio, etc.)
 - **Full Async/Await** - Native async support for FastAPI, asyncio, and concurrent operations
-- **Decorator-Based Tools** - Register methods as tools with `@AgentToolkit.register_as_tool` and Google-style docstrings
+- **Decorator-Based Tools** - Register methods as tools with `@tool` and Google-style docstrings
+- **Functional Tool Registration** - Add standalone functions as tools via `agent.add_tool(fn)` — no subclassing required
 - **Structured I/O** - Pass `str`, `dict`, `list`, or Pydantic `BaseModel` between agents and tools
 - **Built-in Observability** - Delegation-aware tracing with zero extra dependencies; export to JSON Lines, view in terminal or interactive HTML
 - **FastAPI Ready** - Drop agents into FastAPI endpoints with lifespan management
@@ -149,7 +150,58 @@ The framework automatically:
 2. Parses Google-style docstrings into OpenAI tool schemas
 3. Handles the tool-call loop until the agent produces a final response
 
-### 2. Multi-Agent Delegation
+### 2. Functional Style (No Subclassing)
+
+Use `add_tool()` to register standalone functions — no inheritance required:
+
+```python
+import asyncio
+from fractal import BaseAgent, tool
+
+agent = BaseAgent(
+    name="MathBot",
+    system_prompt="You are a math assistant. Use tools to compute."
+)
+
+@tool
+def add(a: int, b: int) -> int:
+    """
+    Add two numbers.
+
+    Args:
+        a (int): First number
+        b (int): Second number
+
+    Returns:
+        Sum of a and b
+    """
+    return a + b
+
+@tool
+def multiply(a: int, b: int) -> int:
+    """
+    Multiply two numbers.
+
+    Args:
+        a (int): First number
+        b (int): Second number
+
+    Returns:
+        Product of a and b
+    """
+    return a * b
+
+agent.add_tool(add)
+agent.add_tool(multiply)
+
+async def main():
+    result = await agent.run("What is (3 + 4) * 5?")
+    print(result.content)
+
+asyncio.run(main())
+```
+
+### 3. Multi-Agent Delegation
 
 Register one agent as a delegate of another with `register_delegate()`:
 
@@ -177,7 +229,7 @@ result = await coordinator.run("Compute (3 + 4) * 5")
 
 Delegation can be nested to arbitrary depth (A -> B -> C -> ...). When tracing is enabled on the top-level agent, tracing automatically propagates through the entire delegation chain.
 
-### 3. Execution Tracing
+### 4. Execution Tracing
 
 Enable tracing to record every agent start/end, tool call, and delegation event:
 
@@ -256,6 +308,7 @@ agent = BaseAgent(
 |--------|-------------|
 | `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
 | `reset()` | Clear conversation history |
+| `add_tool(func, name=None, terminate=False)` | Register a standalone function as a tool |
 | `register_delegate(agent, tool_name=None, description=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |
 | `get_tool_schemas()` | Get OpenAI-compatible tool schemas |

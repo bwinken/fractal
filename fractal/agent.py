@@ -708,6 +708,40 @@ class BaseAgent:
         """
         return await self.toolkit.execute_tool(tool_name, **kwargs)
 
+    def add_tool(self, func, *, name: Optional[str] = None, terminate: bool = False):
+        """
+        Register a standalone function as a tool.
+
+        Accepts either a plain function or one already decorated with @tool.
+        Delegates to the internal toolkit.
+
+        Args:
+            func: The function to register as a tool
+            name (str): Optional custom name (defaults to function name)
+            terminate (bool): If True, agent will exit loop and return this tool's result
+
+        Example::
+
+            from fractal import BaseAgent, tool
+
+            agent = BaseAgent(name="Assistant", system_prompt="You help users.")
+
+            @tool
+            def search(query: str) -> str:
+                \"\"\"Search for information.
+
+                Args:
+                    query (str): Search query
+
+                Returns:
+                    Search results
+                \"\"\"
+                return f"Results for {query}"
+
+            agent.add_tool(search)
+        """
+        self.toolkit.add_tool(func, name=name, terminate=terminate)
+
     def register_delegate(
         self,
         agent: 'BaseAgent',

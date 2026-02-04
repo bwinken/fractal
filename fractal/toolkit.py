@@ -101,6 +101,75 @@ class AgentToolkit:
             # Called without arguments: @register_as_tool
             return decorator(func)
 
+    def add_tool(
+        self,
+        func: Callable,
+        *,
+        name: Optional[str] = None,
+        terminate: bool = False
+    ):
+        """
+        Register a standalone function as a tool.
+
+        Accepts either a plain function or one already decorated with @tool.
+
+        Args:
+            func: The function to register as a tool
+            name: Optional custom name (defaults to function name)
+            terminate: If True, agent will exit loop and return this tool's result
+
+        Example::
+
+            from fractal import BaseAgent, tool
+
+            agent = BaseAgent(name="Assistant", system_prompt="You help users.")
+
+            @tool
+            def search(query: str) -> str:
+                \"\"\"Search for information.
+
+                Args:
+                    query (str): Search query
+
+                Returns:
+                    Search results
+                \"\"\"
+                return f"Results for {query}"
+
+            agent.add_tool(search)
+        """
+        # Determine if already decorated with @tool / @register_as_tool
+        is_decorated = getattr(func, '_is_agent_tool', False)
+
+        if is_decorated:
+            tool_name = name or func._tool_name
+            original_func = func._original_func
+            should_terminate = terminate or getattr(func, '_tool_terminate', False)
+        else:
+            tool_name = name or func.__name__
+            original_func = func
+            should_terminate = terminate
+
+        # Ensure tools dict is initialized
+        if not self._tools:
+            self._discover_tools()
+
+        # Register the callable
+        self._tools[tool_name] = func
+        self._tool_terminate[tool_name] = should_terminate
+
+        # If not decorated, attach metadata so execute_tool can detect async
+        if not is_decorated:
+            func._is_agent_tool = True
+            func._tool_name = tool_name
+            func._tool_terminate = should_terminate
+            func._original_func = func
+
+        # Generate and store schema
+        schema = function_to_tool_schema(original_func)
+        schema['function']['name'] = tool_name
+        self._tool_schemas[tool_name] = schema
+
     def register_delegate(self, agent: 'BaseAgent', tool_name: Optional[str] = None, description: Optional[str] = None):
         """
         Register another agent as a delegate for task delegation.
