@@ -200,13 +200,13 @@ View traces:
 
 ```bash
 # Terminal ASCII view
-python -m fractal.observability view examples/traces/output.jsonl
+fractal view examples/traces/output.jsonl
 
 # Summary only
-python -m fractal.observability view examples/traces/output.jsonl --summary
+fractal view examples/traces/output.jsonl --summary
 
 # Interactive HTML
-python -m fractal.observability visualize examples/traces/output.jsonl -o output.html
+fractal visualize examples/traces/output.jsonl -o output.html
 ```
 
 ## Project Structure
@@ -220,7 +220,7 @@ fractal/
 +-- parser.py                # Google-style docstring -> OpenAI tool schema
 +-- observability/
     +-- __init__.py           # Exports TracingKit, TraceEvent
-    +-- __main__.py           # CLI: python -m fractal.observability
+    +-- __main__.py           # CLI: fractal {view,visualize}
     +-- tracing.py            # TracingKit, TraceEvent
     +-- terminal_viewer.py    # ASCII terminal visualization
     +-- html_visualizer.py    # Interactive HTML visualization
@@ -347,15 +347,15 @@ kit.export_json("trace.jsonl")
 
 ```bash
 # Terminal view (ASCII art, zero dependencies)
-python -m fractal.observability view trace.jsonl
-python -m fractal.observability view trace.jsonl --summary
-python -m fractal.observability view trace.jsonl --flow
-python -m fractal.observability view trace.jsonl --hierarchy
-python -m fractal.observability view trace.jsonl --compact
+fractal view trace.jsonl
+fractal view trace.jsonl --summary
+fractal view trace.jsonl --flow
+fractal view trace.jsonl --hierarchy
+fractal view trace.jsonl --compact
 
 # HTML view (interactive, self-contained single file)
-python -m fractal.observability visualize trace.jsonl
-python -m fractal.observability visualize trace.jsonl -o output.html
+fractal visualize trace.jsonl
+fractal visualize trace.jsonl -o output.html
 ```
 
 Sample output:

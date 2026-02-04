@@ -2,8 +2,8 @@
 Command-line entry point for observability tools.
 
 Usage:
-    python -m fractal.observability visualize trace.jsonl
-    python -m fractal.observability view trace.jsonl
+    fractal view trace.jsonl
+    fractal visualize trace.jsonl -o output.html
 """
 import sys
 import argparse
@@ -12,7 +12,7 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(
         description='Agent execution trace observability tools',
-        usage='python -m fractal.observability {visualize,view} [options]'
+        usage='fractal {visualize,view} [options]'
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Command to execute')

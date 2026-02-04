@@ -31,6 +31,9 @@ fastapi = [
     "uvicorn[standard]>=0.20.0",
 ]
 
+[project.scripts]
+fractal = "fractal.observability.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["fractal*"]
 
