@@ -173,10 +173,135 @@ async def test_tool_execution():
     print("=" * 70)
 
 
+def test_register_delegate_parameters_validation():
+    """Test that register_delegate validates the parameters dict structure."""
+    print("\n" + "=" * 70)
+    print("Testing register_delegate parameters validation")
+    print("=" * 70)
+
+    specialist = SpecialistAgent()
+
+    # --- TypeError cases ---
+
+    # parameters is not a dict
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t1", parameters="bad")
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "'parameters' must be a dict" in str(e)
+        print(f"[OK] non-dict parameters: {e}")
+
+    # parameter spec is not a dict (e.g. {"sql": "str"})
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t2", parameters={"sql": "str"})
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "spec must be a dict" in str(e)
+        print(f"[OK] non-dict spec: {e}")
+
+    # missing 'type' key
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t3", parameters={
+            "sql": {"description": "query"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "missing required key 'type'" in str(e)
+        print(f"[OK] missing type: {e}")
+
+    # missing 'description' key
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t4", parameters={
+            "sql": {"type": "str"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "missing required key 'description'" in str(e)
+        print(f"[OK] missing description: {e}")
+
+    # unknown key (typo)
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t5", parameters={
+            "sql": {"type": "str", "description": "query", "decription": "typo"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "unknown keys" in str(e)
+        print(f"[OK] unknown key: {e}")
+
+    # unsupported type
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t6", parameters={
+            "sql": {"type": "tuple", "description": "bad type"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "unsupported type" in str(e)
+        print(f"[OK] unsupported type: {e}")
+
+    # 'type' is not a string
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t7", parameters={
+            "sql": {"type": 123, "description": "bad"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "unsupported type" in str(e)
+        print(f"[OK] type not a string: {e}")
+
+    # 'required' is not a bool
+    try:
+        toolkit = AgentToolkit()
+        toolkit.register_delegate(specialist, tool_name="t8", parameters={
+            "sql": {"type": "str", "description": "query", "required": "yes"}
+        })
+        assert False, "Should have raised TypeError"
+    except TypeError as e:
+        assert "'required' must be a bool" in str(e)
+        print(f"[OK] required not bool: {e}")
+
+    # --- Valid cases ---
+
+    # Valid full spec
+    toolkit = AgentToolkit()
+    toolkit.register_delegate(specialist, tool_name="t_valid", parameters={
+        "sql": {"type": "str", "description": "SQL query"},
+        "limit": {"type": "int", "description": "Max rows", "required": False},
+    })
+    schemas = toolkit.get_tool_schemas()
+    schema = [s for s in schemas if s['function']['name'] == 't_valid'][0]
+    props = schema['function']['parameters']['properties']
+    required = schema['function']['parameters']['required']
+    assert 'sql' in props
+    assert 'limit' in props
+    assert 'sql' in required
+    assert 'limit' not in required
+    print("[OK] valid structured parameters accepted")
+
+    # Valid with no parameters (default mode)
+    toolkit2 = AgentToolkit()
+    toolkit2.register_delegate(specialist, tool_name="t_default")
+    schemas2 = toolkit2.get_tool_schemas()
+    schema2 = [s for s in schemas2 if s['function']['name'] == 't_default'][0]
+    assert 'query' in schema2['function']['parameters']['properties']
+    print("[OK] default mode (no parameters) works")
+
+    print("\n[OK] All parameter validation tests passed!")
+    print("=" * 70)
+
+
 async def main():
     """Run all tests."""
     test_tool_schemas()
     await test_tool_execution()
+    test_register_delegate_parameters_validation()
 
 
 if __name__ == "__main__":

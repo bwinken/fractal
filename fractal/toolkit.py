@@ -338,16 +338,60 @@ class AgentToolkit:
 
         # Validate custom parameters if provided
         if parameters is not None:
-            from .parser import _map_python_type_to_json
+            if not isinstance(parameters, dict):
+                raise TypeError(
+                    f"register_delegate '{tool_name}': 'parameters' must be a dict, "
+                    f"got {type(parameters).__name__}."
+                )
+
             _valid_types = {'str', 'string', 'int', 'integer', 'float', 'number',
                             'bool', 'boolean', 'list', 'array', 'dict', 'object'}
+            _valid_keys = {'type', 'description', 'required'}
+
             for p_name, p_spec in parameters.items():
-                p_type = p_spec.get('type', '').strip().lower()
-                if p_type not in _valid_types:
+                if not isinstance(p_spec, dict):
                     raise TypeError(
                         f"register_delegate '{tool_name}': parameter '{p_name}' "
-                        f"has unsupported type '{p_spec.get('type', '')}'. "
+                        f"spec must be a dict, got {type(p_spec).__name__}. "
+                        f"Expected format: {{\"type\": \"str\", \"description\": \"...\"}}."
+                    )
+
+                # Check for unknown keys (likely typos)
+                unknown = set(p_spec.keys()) - _valid_keys
+                if unknown:
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"has unknown keys: {unknown}. "
+                        f"Valid keys: type, description, required."
+                    )
+
+                # 'type' is required
+                if 'type' not in p_spec:
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"is missing required key 'type'."
+                    )
+
+                p_type = p_spec['type']
+                if not isinstance(p_type, str) or p_type.strip().lower() not in _valid_types:
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"has unsupported type '{p_type}'. "
                         f"Supported types: str, int, float, bool, list, dict."
+                    )
+
+                # 'description' is required
+                if 'description' not in p_spec:
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"is missing required key 'description'."
+                    )
+
+                # 'required' must be bool if provided
+                if 'required' in p_spec and not isinstance(p_spec['required'], bool):
+                    raise TypeError(
+                        f"register_delegate '{tool_name}': parameter '{p_name}' "
+                        f"'required' must be a bool, got {type(p_spec['required']).__name__}."
                     )
 
         # Determine whether to use simple (query) or structured (kwargs) mode

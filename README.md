@@ -1,8 +1,8 @@
 # Fractal
 
-**Self-similar agent decomposition for building complex AI workflows**
+**Self-similar agent decomposition for building complex AI workflows.**
 
-Just as fractals create complexity through repeated simple patterns, Fractal creates powerful agent systems through recursive delegation. Build multi-agent pipelines where each agent focuses on one task and delegates the rest.
+Just as fractals create complexity through repeated simple patterns, Fractal creates powerful agent systems through recursive delegation. Each agent focuses on one task and delegates the rest — the same pattern at every depth.
 
 ```
 Coordinator
@@ -11,24 +11,65 @@ Coordinator
   +-- Writer         (depth=1)
 ```
 
+---
+
+## Table of Contents
+
+- [Design Philosophy](#design-philosophy)
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quick Start](#quick-start)
+  - [Class-Based Agent](#1-class-based-agent)
+  - [Functional Style](#2-functional-style-no-subclassing)
+  - [Multi-Agent Delegation](#3-multi-agent-delegation)
+  - [Execution Tracing](#4-execution-tracing)
+- [API Reference](#api-reference)
+  - [BaseAgent](#baseagent)
+  - [@tool / @AgentToolkit.register_as_tool](#tool--agenttoolkitregister_as_tool)
+  - [Tool Argument Constraints](#tool-argument-constraints)
+  - [AgentResult](#agentresult)
+  - [ToolResult](#toolresult)
+  - [TracingKit](#tracingkit)
+- [Observability CLI](#observability-cli)
+- [FastAPI Integration](#fastapi-integration)
+- [Examples](#examples)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Design Philosophy
+
+Fractal is built on three core ideas:
+
+**1. Recursive Delegation**
+An agent that can't do something delegates to one that can. The delegated agent may delegate further. This creates tree-shaped workflows of arbitrary depth — the same pattern repeating at every level, like a fractal.
+
+**2. Composition over Inheritance**
+Each `BaseAgent` owns an `AgentToolkit` (HAS-A, not IS-A). You can build agents by subclassing and decorating methods, or by composing standalone functions with `add_tool()`. Both approaches use the same underlying toolkit.
+
+**3. Tools via Docstrings**
+Write a Python function with a Google-style docstring and Fractal automatically generates the [OpenAI tool schema](https://platform.openai.com/docs/guides/function-calling). No manual JSON. No schema files. The docstring *is* the schema.
+
+---
+
 ## Features
 
-- **Recursive Delegation** - Agents delegate sub-tasks to other agents, forming tree-shaped workflows
-- **OpenAI Compatible** - Works with OpenAI API and any OpenAI-compatible endpoint (Azure, Ollama, LM Studio, etc.)
-- **Full Async/Await** - Native async support for FastAPI, asyncio, and concurrent operations
-- **Decorator-Based Tools** - Register methods as tools with `@tool` and Google-style docstrings
-- **Functional Tool Registration** - Add standalone functions as tools via `agent.add_tool(fn)` — no subclassing required
-- **Structured I/O** - Pass `str`, `dict`, `list`, or Pydantic `BaseModel` between agents and tools
-- **Built-in Observability** - Delegation-aware tracing with zero extra dependencies; export to JSON Lines, view in terminal or interactive HTML
-- **FastAPI Ready** - Drop agents into FastAPI endpoints with lifespan management
-- **Composition Architecture** - Agent HAS-A Toolkit (not IS-A), clean separation of concerns
+| Category | Details |
+|----------|---------|
+| **Delegation** | Recursive agent-to-agent delegation with structured or simple inputs |
+| **LLM** | OpenAI API + any compatible endpoint (Azure, Ollama, LM Studio) |
+| **Async** | Native `async`/`await`; mixed sync and async tools |
+| **Tools** | Decorator-based (`@tool`) or functional (`add_tool()`) registration |
+| **I/O** | `str`, `dict`, `list`, or Pydantic `BaseModel` between agents and tools |
+| **Observability** | Delegation-aware tracing → JSON Lines → terminal ASCII or interactive HTML |
+| **FastAPI** | Drop agents into endpoints with lifespan management |
+| **Validation** | Registration-time checks for unsupported types, docstring mismatches |
 
-## Requirements
-
-- Python >= 3.9
-- openai >= 1.0.0
-- pydantic >= 2.0.0
-- python-dotenv >= 1.0.0
+---
 
 ## Installation
 
@@ -42,45 +83,20 @@ With FastAPI support:
 pip install -e ".[fastapi]"
 ```
 
+**Requirements:** Python >= 3.9, openai >= 1.0.0, pydantic >= 2.0.0, python-dotenv >= 1.0.0
+
+---
+
 ## Configuration
 
-Fractal reads OpenAI settings from environment variables. You can configure them in two ways:
-
-### Option 1: Environment Variables (recommended for deployment)
+Fractal reads OpenAI settings from environment variables or a `.env` file.
 
 ```bash
-export OPENAI_API_KEY=sk-your-api-key-here
-
-# Optional: custom endpoint (Azure, Ollama, LM Studio, etc.)
-export OPENAI_BASE_URL=https://your-api.com/v1
-
-# Optional: default model (used when not specified in code)
-export OPENAI_MODEL=gpt-4o-mini
-```
-
-### Option 2: `.env` File (recommended for local development)
-
-```bash
-cp .env.example .env
-# Edit .env and set your OPENAI_API_KEY
-```
-
-`.env` file:
-
-```bash
+# .env (recommended for local development)
 OPENAI_API_KEY=sk-your-api-key-here
-
-# Optional: custom endpoint (Azure, Ollama, etc.)
-# OPENAI_BASE_URL=https://your-api.com/v1
-
-# Optional: default model
-# OPENAI_MODEL=gpt-4o-mini
+# OPENAI_BASE_URL=https://your-api.com/v1   # Optional: Azure, Ollama, etc.
+# OPENAI_MODEL=gpt-4o-mini                  # Optional: default model
 ```
-
-> **Priority:** Constructor arguments > environment variables > defaults.
-> For example, `BaseAgent(model="gpt-4")` always uses `gpt-4` regardless of `OPENAI_MODEL`.
-
-### Supported Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -89,11 +105,15 @@ OPENAI_API_KEY=sk-your-api-key-here
 | `OPENAI_MODEL` | Default model name | `gpt-4o-mini` |
 | `CONTEXT_WINDOW` | Token limit for auto-trimming conversation history | disabled |
 
+> **Priority:** Constructor arguments > environment variables > defaults.
+
+---
+
 ## Quick Start
 
-### 1. Define an Agent
+### 1. Class-Based Agent
 
-Create a custom agent by inheriting `BaseAgent` and decorating methods with `@AgentToolkit.register_as_tool`:
+Subclass `BaseAgent` and decorate methods with `@tool`:
 
 ```python
 import asyncio
@@ -165,29 +185,21 @@ agent = BaseAgent(
 
 @tool
 def add(a: int, b: int) -> int:
-    """
-    Add two numbers.
+    """Add two numbers.
 
     Args:
         a (int): First number
         b (int): Second number
-
-    Returns:
-        Sum of a and b
     """
     return a + b
 
 @tool
 def multiply(a: int, b: int) -> int:
-    """
-    Multiply two numbers.
+    """Multiply two numbers.
 
     Args:
         a (int): First number
         b (int): Second number
-
-    Returns:
-        Product of a and b
     """
     return a * b
 
@@ -235,16 +247,13 @@ coordinator.register_delegate(
 # data_agent.run({"sql": "SELECT ...", "limit": 100})
 ```
 
-Delegation can be nested to arbitrary depth (A -> B -> C -> ...). When tracing is enabled on the top-level agent, tracing automatically propagates through the entire delegation chain.
+Delegation can be nested to arbitrary depth (A → B → C → ...). When tracing is enabled on the top-level agent, it automatically propagates through the entire chain.
 
 ### 4. Execution Tracing
 
 Enable tracing to record every agent start/end, tool call, and delegation event:
 
 ```python
-coordinator = Coordinator()
-
-# Enable tracing with auto-export
 class TracedCoordinator(BaseAgent):
     def __init__(self):
         super().__init__(
@@ -252,43 +261,19 @@ class TracedCoordinator(BaseAgent):
             system_prompt="...",
             client=AsyncOpenAI(),
             enable_tracing=True,
-            tracing_output_file="examples/traces/output.jsonl"
+            tracing_output_file="trace.jsonl"
         )
 ```
 
 View traces:
 
 ```bash
-# Terminal ASCII view
-fractal view examples/traces/output.jsonl
-
-# Summary only
-fractal view examples/traces/output.jsonl --summary
-
-# Interactive HTML
-fractal visualize examples/traces/output.jsonl -o output.html
+fractal view trace.jsonl              # Terminal ASCII view
+fractal view trace.jsonl --summary    # Summary statistics
+fractal visualize trace.jsonl -o out.html   # Interactive HTML
 ```
 
-## Project Structure
-
-```
-fractal/
-+-- __init__.py              # Public API exports
-+-- agent.py                 # BaseAgent - LLM interaction, tool loop, delegation
-+-- toolkit.py               # AgentToolkit - tool registration, discovery, execution
-+-- models.py                # AgentResult, ToolResult (Pydantic models)
-+-- parser.py                # Google-style docstring -> OpenAI tool schema
-+-- observability/
-    +-- __init__.py           # Exports TracingKit, TraceEvent
-    +-- __main__.py           # CLI: fractal {view,visualize}
-    +-- tracing.py            # TracingKit, TraceEvent
-    +-- terminal_viewer.py    # ASCII terminal visualization
-    +-- html_visualizer.py    # Interactive HTML visualization
-
-examples/                     # Working examples (see examples/README.md)
-tests/                        # Test suite: unit / integration / e2e (see tests/README.md)
-docs/                         # Additional documentation
-```
+---
 
 ## API Reference
 
@@ -332,14 +317,10 @@ from fractal import BaseAgent, tool
 class MyAgent(BaseAgent):
     @tool
     def my_tool(self, query: str) -> str:
-        """
-        Tool description.
+        """Tool description.
 
         Args:
             query (str): Search query
-
-        Returns:
-            Search result
         """
         return f"Result for: {query}"
 
@@ -349,16 +330,13 @@ class MyAgent(BaseAgent):
 
         Args:
             answer (str): The final answer
-
-        Returns:
-            The answer
         """
         return answer
 ```
 
 **Decorator options:**
-- `name` - Override the tool name (default: method name)
-- `terminate` - If `True`, the agent loop stops after this tool executes
+- `name` — Override the tool name (default: method name)
+- `terminate` — If `True`, the agent loop stops after this tool executes
 
 ### Tool Argument Constraints
 
@@ -403,9 +381,6 @@ def mismatch_tool(count: int) -> str:
 
     Args:
         count (str): Number of results    # docstring says str, annotation says int!
-
-    Returns:
-        Results
     """
     return str(count)
 
@@ -416,11 +391,11 @@ agent.add_tool(mismatch_tool)
 ```
 
 **Other constraints:**
-- Type information is read from the **docstring `Args:` section**, not from Python type annotations. Annotations are used for validation only.
-- `Optional[str]` is fine — the framework unwraps it to `str`. But `Union[str, int]` is not well supported.
-- Default values make a parameter optional (not in `required`), but the default value itself is **not** included in the schema — the LLM won't see it.
-- If a parameter is missing from the `Args:` section, the LLM receives an empty description.
-- If a function has no docstring at all, the tool description defaults to the function name.
+- Type information comes from the **docstring `Args:` section**, not from Python annotations. Annotations are used for validation only.
+- `Optional[str]` is fine — unwraps to `str`. `Union[str, int]` is not well supported.
+- Default values make a parameter optional (omitted from `required`), but the default value itself is **not** included in the schema.
+- A parameter missing from `Args:` receives an empty description.
+- A function with no docstring uses the function name as the tool description.
 
 ### AgentResult
 
@@ -466,6 +441,8 @@ kit.export_json("trace.jsonl")
 
 **Event types:** `agent_start`, `agent_end`, `agent_delegate`, `delegation_end`, `tool_call`, `tool_result`, `error`
 
+---
+
 ## Observability CLI
 
 ```bash
@@ -500,6 +477,8 @@ EXECUTION FLOW
 ================================================================================
 ```
 
+---
+
 ## FastAPI Integration
 
 ```python
@@ -522,9 +501,6 @@ class MyAgent(BaseAgent):
 
         Args:
             query (str): Search query
-
-        Returns:
-            Result
         """
         return f"Info about {query}"
 
@@ -543,33 +519,86 @@ async def query(text: str):
 
 See [examples/fastapi_example.py](examples/fastapi_example.py) and [examples/fastapi_multiagent.py](examples/fastapi_multiagent.py) for complete examples.
 
+---
+
 ## Examples
 
-See the [examples/](examples/) directory for complete working examples:
+Choose the right example for your use case:
 
-| Example | Description |
-|---------|-------------|
-| [inheritance_example.py](examples/inheritance_example.py) | Agent inheritance pattern (recommended starting point) |
-| [async_example.py](examples/async_example.py) | Async agents with sync/async tools |
-| [multiagent_example.py](examples/multiagent_example.py) | Multi-agent delegation patterns |
-| [rag_example.py](examples/rag_example.py) | RAG agent with vector search |
-| [fastapi_example.py](examples/fastapi_example.py) | FastAPI integration |
-| [fastapi_multiagent.py](examples/fastapi_multiagent.py) | FastAPI with multi-agent routing |
-| [tracing_example.py](examples/tracing_example.py) | Execution tracing and monitoring |
-| [delegation_tracing_example.py](examples/delegation_tracing_example.py) | Delegation-aware tracing |
-| [visualization_demo.py](examples/visualization_demo.py) | Trace visualization demo |
-| [tool_namespacing_example.py](examples/tool_namespacing_example.py) | Tool namespacing across toolkits |
-| [basic_example.py](examples/basic_example.py) | Standalone toolkit pattern |
+### Getting Started
+
+| What you want to do | Example | API Key? |
+|---------------------|---------|----------|
+| Understand the basics, explore tool schemas | [inheritance_example.py](examples/inheritance_example.py) | **No** |
+| See the functional `add_tool()` pattern | [basic_example.py](examples/basic_example.py) | Partial |
+
+### Single-Agent Patterns
+
+| What you want to do | Example | API Key? |
+|---------------------|---------|----------|
+| Build agents with class inheritance | [inheritance_example.py](examples/inheritance_example.py) | No |
+| Use standalone toolkit without subclassing | [basic_example.py](examples/basic_example.py) | Yes |
+| Mix sync and async tools, concurrent execution | [async_example.py](examples/async_example.py) | Yes |
+
+### Multi-Agent Patterns
+
+| What you want to do | Example | API Key? |
+|---------------------|---------|----------|
+| Coordinator delegates to specialists | [multiagent_example.py](examples/multiagent_example.py) | Yes |
+| Handle overlapping tool names across agents | [tool_namespacing_example.py](examples/tool_namespacing_example.py) | Yes |
+| Knowledge-based Q&A with vector search (RAG) | [rag_example.py](examples/rag_example.py) | Yes |
+
+### Web / API Integration
+
+| What you want to do | Example | API Key? |
+|---------------------|---------|----------|
+| Serve a single agent over HTTP | [fastapi_example.py](examples/fastapi_example.py) | Yes |
+| Serve multiple agents with routing | [fastapi_multiagent.py](examples/fastapi_multiagent.py) | Yes |
+
+### Observability & Tracing
+
+| What you want to do | Example | API Key? |
+|---------------------|---------|----------|
+| Record and inspect trace events | [tracing_example.py](examples/tracing_example.py) | Yes |
+| Trace delegation chains (A → B → C) | [delegation_tracing_example.py](examples/delegation_tracing_example.py) | Yes |
+| Full workflow: trace → export → visualize | [visualization_demo.py](examples/visualization_demo.py) | Yes |
 
 ```bash
-# Run an example (most require OPENAI_API_KEY in .env)
+# Run an example
 python examples/inheritance_example.py
 
-# FastAPI example
+# FastAPI examples
 pip install -e ".[fastapi]"
 python examples/fastapi_example.py
 # Visit http://localhost:8000/docs
 ```
+
+See [examples/README.md](examples/README.md) for detailed descriptions and sample trace files.
+
+---
+
+## Project Structure
+
+```
+fractal/
++-- __init__.py              # Public API exports
++-- agent.py                 # BaseAgent - LLM interaction, tool loop, delegation
++-- toolkit.py               # AgentToolkit - tool registration, discovery, execution
++-- models.py                # AgentResult, ToolResult (Pydantic models)
++-- parser.py                # Google-style docstring -> OpenAI tool schema
++-- observability/
+    +-- __init__.py           # Exports TracingKit, TraceEvent
+    +-- __main__.py           # CLI: fractal {view,visualize}
+    +-- tracing.py            # TracingKit, TraceEvent
+    +-- terminal_viewer.py    # ASCII terminal visualization
+    +-- html_visualizer.py    # Interactive HTML visualization
+
+examples/                     # Working examples (see examples/README.md)
+tests/                        # Test suite (see tests/README.md)
+docs/                         # Additional documentation
+```
+
+---
 
 ## Documentation
 
@@ -584,8 +613,10 @@ python examples/fastapi_example.py
 | [docs/TRACING.md](docs/TRACING.md) | Execution tracing guide |
 | [docs/TRACE_VISUALIZATION.md](docs/TRACE_VISUALIZATION.md) | Visualization tools guide |
 | [docs/MODEL_SELECTION.md](docs/MODEL_SELECTION.md) | Model selection guide |
-| [examples/README.md](examples/README.md) | Examples guide |
+| [examples/README.md](examples/README.md) | Examples guide with sample traces |
 | [tests/README.md](tests/README.md) | Test suite guide |
+
+---
 
 ## Contributing
 
