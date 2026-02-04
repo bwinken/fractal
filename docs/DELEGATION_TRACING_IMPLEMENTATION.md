@@ -83,7 +83,7 @@ Two new event types track delegation flow:
   - Restore original tracing state
 
 ```python
-async def agent_caller(query: str) -> AgentReturnPart:
+async def agent_caller(query: str) -> str:
     calling_agent = self._target
 
     if calling_agent and calling_agent.tracing:

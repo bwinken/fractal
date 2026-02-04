@@ -5,7 +5,7 @@ import inspect
 from typing import Any, Callable, Dict, List, Optional
 from functools import wraps
 from .parser import function_to_tool_schema
-from .models import ToolReturnPart
+from .models import ToolResult
 
 
 class AgentToolkit:
@@ -123,9 +123,6 @@ class AgentToolkit:
                 description="Delegate complex queries to the specialist agent"
             )
         """
-        # Import here to avoid circular dependency
-        from .models import AgentReturnPart
-
         # Generate tool name if not provided
         if tool_name is None:
             agent_name = getattr(agent, 'name', 'agent')
@@ -224,20 +221,6 @@ class AgentToolkit:
         schema['function']['name'] = tool_name
         self._tool_schemas[tool_name] = schema
 
-    def register_agent(self, agent: 'BaseAgent', tool_name: Optional[str] = None, description: Optional[str] = None):
-        """
-        Deprecated: Use register_delegate() instead.
-
-        Register another agent as a delegate for task delegation.
-        This method is kept for backwards compatibility.
-
-        Args:
-            agent (BaseAgent): The subordinate agent to register for delegation
-            tool_name (str): Optional name for the delegation tool
-            description (str): Optional description for the tool
-        """
-        self.register_delegate(agent, tool_name, description)
-
     def get_tools(self) -> Dict[str, Callable]:
         """
         Get all registered tools in this toolkit.
@@ -286,7 +269,7 @@ class AgentToolkit:
                 schema = function_to_tool_schema(attr._original_func)
                 self._tool_schemas[tool_name] = schema
 
-    async def execute_tool(self, tool_name: str, **kwargs) -> ToolReturnPart:
+    async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
         """
         Execute a registered tool by name (supports both sync and async tools).
 
@@ -295,12 +278,12 @@ class AgentToolkit:
             **kwargs: Arguments to pass to the tool
 
         Returns:
-            ToolReturnPart containing the tool's output
+            ToolResult containing the tool's output
         """
         tools = self.get_tools()
 
         if tool_name not in tools:
-            return ToolReturnPart(
+            return ToolResult(
                 content="",  # Empty string instead of None
                 tool_name=tool_name,
                 error=f"Tool '{tool_name}' not found in toolkit"
@@ -318,7 +301,7 @@ class AgentToolkit:
                 result = tool_func(**kwargs)
 
             should_terminate = self._tool_terminate.get(tool_name, False)
-            return ToolReturnPart(
+            return ToolResult(
                 content=result,
                 tool_name=tool_name,
                 metadata={
@@ -327,7 +310,7 @@ class AgentToolkit:
                 }
             )
         except Exception as e:
-            return ToolReturnPart(
+            return ToolResult(
                 content="",  # Empty string instead of None
                 tool_name=tool_name,
                 error=str(e),

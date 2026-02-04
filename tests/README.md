@@ -62,7 +62,7 @@ python -m pytest tests/unit/test_content_types.py::test_function_name
 ### Unit Tests
 
 Test individual components in isolation:
-- **test_content_types.py**: Tests Pydantic models, AgentReturnPart, ToolReturnPart
+- **test_content_types.py**: Tests Pydantic models, AgentResult, ToolResult
 - **test_delegate_schema.py**: Tests tool schema generation for delegated agents
 
 **Characteristics**:

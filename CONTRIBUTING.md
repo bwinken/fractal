@@ -23,7 +23,7 @@ cp .env.example .env
 fractal/          # Core framework
   agent.py        # BaseAgent - LLM interaction, tool loop, delegation
   toolkit.py      # AgentToolkit - tool registration, discovery, execution
-  models.py       # Pydantic models (AgentReturnPart, ToolReturnPart)
+  models.py       # Pydantic models (AgentResult, ToolResult)
   parser.py       # Docstring → OpenAI tool schema
   observability/  # Tracing and visualization
 examples/         # Working examples
@@ -124,7 +124,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for planned features. Other welcome contr
 
 ## Guidelines
 
-- **Don't break the public API** — `BaseAgent`, `AgentToolkit`, `register_as_tool`, `register_delegate`, `AgentReturnPart`, `ToolReturnPart`, `TracingKit` are all public. Changes to their signatures should be backward compatible.
+- **Don't break the public API** — `BaseAgent`, `AgentToolkit`, `tool` / `register_as_tool`, `register_delegate`, `AgentResult`, `ToolResult`, `TracingKit` are all public. Changes to their signatures should be backward compatible.
 - **Keep dependencies minimal** — The core framework depends only on `openai`, `pydantic`, and `python-dotenv`. New dependencies should be optional.
 - **Test before submitting** — Run `python -m pytest tests/unit/` at minimum.
 

@@ -8,7 +8,7 @@ from openai import OpenAI, AsyncOpenAI
 from pydantic import BaseModel
 
 from .toolkit import AgentToolkit
-from .models import AgentReturnPart, ToolReturnPart
+from .models import AgentResult, ToolResult
 from .observability import TracingKit
 
 
@@ -100,7 +100,7 @@ class BaseAgent:
         user_input: Union[str, dict, list, BaseModel],
         max_iterations: int = 10,
         max_retries: int = 3
-    ) -> AgentReturnPart:
+    ) -> AgentResult:
         """
         Run the agent with a user input (async).
 
@@ -110,7 +110,7 @@ class BaseAgent:
             max_retries (int): Maximum number of retries for API errors
 
         Returns:
-            AgentReturnPart containing the agent's final response
+            AgentResult containing the agent's final response
         """
         # Convert input to string if necessary
         if isinstance(user_input, str):
@@ -170,7 +170,7 @@ class BaseAgent:
                     if not message.content and not message.tool_calls:
                         # Try to extract from refusal if present
                         if hasattr(message, 'refusal') and message.refusal:
-                            result = AgentReturnPart(
+                            result = AgentResult(
                                 content=f"Request refused: {message.refusal}",
                                 agent_name=self.name,
                                 success=False,
@@ -194,7 +194,7 @@ class BaseAgent:
                             })
                             continue
                         else:
-                            result = AgentReturnPart(
+                            result = AgentResult(
                                 content="Agent failed to provide a valid response after retries",
                                 agent_name=self.name,
                                 success=False,
@@ -220,7 +220,7 @@ class BaseAgent:
                     last_error = f"Invalid tool call JSON: {str(e)}"
                     retry_count += 1
                     if retry_count >= max_retries:
-                        result = AgentReturnPart(
+                        result = AgentResult(
                             content=last_error,
                             agent_name=self.name,
                             success=False,
@@ -253,7 +253,7 @@ class BaseAgent:
                             await asyncio.sleep(wait_time)
                             continue
                         else:
-                            result = AgentReturnPart(
+                            result = AgentResult(
                                 content=f"Rate limit exceeded: {error_str}",
                                 agent_name=self.name,
                                 success=False,
@@ -277,7 +277,7 @@ class BaseAgent:
                             await asyncio.sleep(1.0 * retry_count)
                             continue
                         else:
-                            result = AgentReturnPart(
+                            result = AgentResult(
                                 content=f"Request timeout: {error_str}",
                                 agent_name=self.name,
                                 success=False,
@@ -294,7 +294,7 @@ class BaseAgent:
                             return result
 
                     # Other errors - fail immediately
-                    result = AgentReturnPart(
+                    result = AgentResult(
                         content=error_str,
                         agent_name=self.name,
                         success=False,
@@ -372,7 +372,7 @@ class BaseAgent:
 
                         if should_terminate and not tool_result.error:
                             # Termination tool executed successfully - exit immediately
-                            result = AgentReturnPart(
+                            result = AgentResult(
                                 content=tool_result.content,
                                 agent_name=self.name,
                                 success=True,
@@ -422,7 +422,7 @@ class BaseAgent:
                     continue
 
                 # No tool calls, return final response
-                result = AgentReturnPart(
+                result = AgentResult(
                     content=message.content or "",
                     agent_name=self.name,
                     success=True,
@@ -440,7 +440,7 @@ class BaseAgent:
 
             except Exception as e:
                 # Catch any unexpected errors in tool processing
-                result = AgentReturnPart(
+                result = AgentResult(
                     content=f"Unexpected error in agent execution: {str(e)}",
                     agent_name=self.name,
                     success=False,
@@ -457,7 +457,7 @@ class BaseAgent:
                 return result
 
         # Max iterations reached
-        result = AgentReturnPart(
+        result = AgentResult(
             content="Max iterations reached without completion",
             agent_name=self.name,
             success=False,
@@ -667,25 +667,8 @@ class BaseAgent:
 
         return system_messages + trimmed
 
-    async def call_agent(
-        self,
-        other_agent: 'BaseAgent',
-        input_data: Union[str, dict, list, BaseModel]
-    ) -> AgentReturnPart:
-        """
-        Call another agent and get its response (async).
-
-        Args:
-            other_agent (BaseAgent): The agent to call
-            input_data (Union[str, dict, list, BaseModel]): Input to pass to the other agent
-
-        Returns:
-            AgentReturnPart from the other agent
-        """
-        return await other_agent.run(input_data)
-
     # ========================================================================
-    # Toolkit delegation methods (for convenience and backwards compatibility)
+    # Toolkit delegation methods
     # ========================================================================
 
     def get_tools(self) -> Dict[str, Any]:
@@ -710,7 +693,7 @@ class BaseAgent:
         """
         return self.toolkit.get_tool_schemas()
 
-    async def execute_tool(self, tool_name: str, **kwargs) -> ToolReturnPart:
+    async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:
         """
         Execute a registered tool by name.
 
@@ -721,7 +704,7 @@ class BaseAgent:
             **kwargs: Arguments to pass to the tool
 
         Returns:
-            ToolReturnPart containing the tool's output
+            ToolResult containing the tool's output
         """
         return await self.toolkit.execute_tool(tool_name, **kwargs)
 
@@ -762,21 +745,3 @@ class BaseAgent:
         """
         self.toolkit.register_delegate(agent, tool_name, description)
 
-    def register_agent(
-        self,
-        agent: 'BaseAgent',
-        tool_name: Optional[str] = None,
-        description: Optional[str] = None
-    ):
-        """
-        Deprecated: Use register_delegate() instead.
-
-        Register a subordinate agent for task delegation.
-        This method is kept for backwards compatibility.
-
-        Args:
-            agent (BaseAgent): The subordinate agent to register for delegation
-            tool_name (str): Optional name for the delegation tool
-            description (str): Optional description for the tool
-        """
-        self.register_delegate(agent, tool_name, description)

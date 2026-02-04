@@ -5,12 +5,12 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
-class ToolReturnPart(BaseModel):
+class ToolResult(BaseModel):
     """
-    Wrapper for tool output within an agent.
+    Wrapper for tool execution output.
 
-    This is used to wrap the return value from a tool execution,
-    allowing for structured data passing with metadata.
+    Contains the return value from a tool execution,
+    along with metadata and error information.
     """
     content: Union[str, dict, list, BaseModel] = Field(..., description="The actual content returned by the tool (string, dict, list, or Pydantic model)")
     tool_name: str = Field(..., description="Name of the tool that generated this output")
@@ -21,17 +21,22 @@ class ToolReturnPart(BaseModel):
         arbitrary_types_allowed = True
 
 
-class AgentReturnPart(BaseModel):
+class AgentResult(BaseModel):
     """
-    Wrapper for data being returned from one agent to another.
+    Wrapper for an agent's final response.
 
-    This enables agents to communicate and pass structured Pydantic objects
-    between each other in a standardized way.
+    Returned by agent.run(), contains the agent's output along with
+    execution metadata and success status.
     """
-    content: Union[str, dict, list, BaseModel] = Field(..., description="The actual content being returned to another agent (string, dict, list, or Pydantic model)")
+    content: Union[str, dict, list, BaseModel] = Field(..., description="The actual content being returned (string, dict, list, or Pydantic model)")
     agent_name: str = Field(..., description="Name of the agent that generated this output")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata about the agent's response")
     success: bool = Field(default=True, description="Whether the agent execution was successful")
 
     class Config:
         arbitrary_types_allowed = True
+
+
+# Backwards-compatible aliases
+ToolReturnPart = ToolResult
+AgentReturnPart = AgentResult

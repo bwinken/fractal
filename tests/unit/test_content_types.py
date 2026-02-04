@@ -5,7 +5,7 @@ Tests: str, dict, list, BaseModel, list of BaseModel
 import os
 import json
 from openai import OpenAI
-from fractal import BaseAgent, AgentToolkit, ToolReturnPart
+from fractal import BaseAgent, AgentToolkit, ToolResult
 from pydantic import BaseModel
 
 # Set dummy API key for testing

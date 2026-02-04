@@ -12,7 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from fractal import BaseAgent, AgentToolkit, AgentReturnPart
+from fractal import BaseAgent, AgentToolkit, AgentResult
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'

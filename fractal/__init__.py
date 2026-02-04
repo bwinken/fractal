@@ -8,19 +8,23 @@ Fractal creates powerful agent workflows through recursive delegation.
 
 from .agent import BaseAgent
 from .toolkit import AgentToolkit
-from .models import AgentReturnPart, ToolReturnPart
-from .parser import parse_google_docstring, function_to_tool_schema
+from .models import AgentResult, ToolResult, AgentReturnPart, ToolReturnPart
 from .observability import TracingKit, TraceEvent
+
+# Convenient alias: @tool instead of @AgentToolkit.register_as_tool
+tool = AgentToolkit.register_as_tool
 
 __version__ = "0.1.0"
 
 __all__ = [
     "BaseAgent",
     "AgentToolkit",
-    "AgentReturnPart",
-    "ToolReturnPart",
-    "parse_google_docstring",
-    "function_to_tool_schema",
+    "AgentResult",
+    "ToolResult",
     "TracingKit",
     "TraceEvent",
+    "tool",
+    # Backwards-compatible aliases
+    "AgentReturnPart",
+    "ToolReturnPart",
 ]

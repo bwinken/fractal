@@ -7,7 +7,7 @@ This framework has full async/await support for building high-performance agenti
 All core operations are now async:
 - ✅ Agent execution (`agent.run()`)
 - ✅ Tool execution (`execute_tool()`)
-- ✅ Agent-to-agent communication (`call_agent()`)
+- ✅ Agent-to-agent communication (via `register_delegate()` or direct `await agent.run()`)
 - ✅ Both sync and async tools supported
 - ✅ Concurrent tool execution
 - ✅ FastAPI integration ready

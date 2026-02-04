@@ -187,9 +187,9 @@ async def example_agent_to_agent():
     print(f"\nAgent 1: {agent1.name}")
     print(f"Agent 2: {agent2.name}")
 
-    # Agent 1 calls Agent 2
+    # Agent 1 calls Agent 2 directly
     print("\nAgent1 calling Agent2...")
-    result = await agent1.call_agent(agent2, "List available sources")
+    result = await agent2.run("List available sources")
 
     print(f"\nResponse from Agent2:")
     print(f"Success: {result.success}")

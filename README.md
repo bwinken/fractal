@@ -216,7 +216,7 @@ fractal/
 +-- __init__.py              # Public API exports
 +-- agent.py                 # BaseAgent - LLM interaction, tool loop, delegation
 +-- toolkit.py               # AgentToolkit - tool registration, discovery, execution
-+-- models.py                # AgentReturnPart, ToolReturnPart (Pydantic models)
++-- models.py                # AgentResult, ToolResult (Pydantic models)
 +-- parser.py                # Google-style docstring -> OpenAI tool schema
 +-- observability/
     +-- __init__.py           # Exports TracingKit, TraceEvent
@@ -254,21 +254,22 @@ agent = BaseAgent(
 
 | Method | Description |
 |--------|-------------|
-| `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentReturnPart` |
+| `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
 | `reset()` | Clear conversation history |
-| `await call_agent(other_agent, input_data)` | Call another agent directly |
 | `register_delegate(agent, tool_name=None, description=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |
 | `get_tool_schemas()` | Get OpenAI-compatible tool schemas |
 | `await execute_tool(tool_name, **kwargs)` | Execute a registered tool by name |
 
-### AgentToolkit
+### @tool / @AgentToolkit.register_as_tool
 
-Tool management via decorator pattern. Used internally by `BaseAgent` (composition), but can also be used standalone.
+Register agent methods as callable tools. Both forms are equivalent:
 
 ```python
-class MyToolkit(AgentToolkit):
-    @AgentToolkit.register_as_tool
+from fractal import BaseAgent, tool
+
+class MyAgent(BaseAgent):
+    @tool
     def my_tool(self, query: str) -> str:
         """
         Tool description.
@@ -281,7 +282,7 @@ class MyToolkit(AgentToolkit):
         """
         return f"Result for: {query}"
 
-    @AgentToolkit.register_as_tool(name="custom_name", terminate=True)
+    @tool(name="custom_name", terminate=True)
     def final_answer(self, answer: str) -> str:
         """Return final answer and stop the agent loop.
 
@@ -298,7 +299,7 @@ class MyToolkit(AgentToolkit):
 - `name` - Override the tool name (default: method name)
 - `terminate` - If `True`, the agent loop stops after this tool executes
 
-### AgentReturnPart
+### AgentResult
 
 Returned by `agent.run()`.
 
@@ -309,7 +310,7 @@ Returned by `agent.run()`.
 | `metadata` | `dict \| None` | Additional metadata |
 | `success` | `bool` | Whether execution succeeded |
 
-### ToolReturnPart
+### ToolResult
 
 Returned by `agent.execute_tool()`.
 
