@@ -188,7 +188,7 @@ async def main():
 
     # Analyst tool call
     coordinator.tracing.start_tool_call("Analyst", "analyze", {"data": "test"})
-    result = analyst.toolkit.execute_tool("analyze", data="test data")
+    result = await analyst.toolkit.execute_tool("analyze", data="test data")
     coordinator.tracing.end_tool_call("Analyst", "analyze", result.content)
 
     coordinator.tracing.end_agent("Analyst", "analysis complete")

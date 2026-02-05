@@ -199,11 +199,11 @@ async def main():
     print("[4] Test Individual Agents (Direct)")
     print("-" * 40)
 
-    result = researcher.toolkit.execute_tool("gather_facts", topic="Python")
+    result = await researcher.toolkit.execute_tool("gather_facts", topic="Python")
     print(f"  Researcher.gather_facts('Python'):")
     print(f"    {result.content}")
 
-    result = writer.toolkit.execute_tool("format_article", title="Test", content="Hello")
+    result = await writer.toolkit.execute_tool("format_article", title="Test", content="Hello")
     print(f"\n  Writer.format_article('Test', 'Hello'):")
     print(f"    {result.content[:50]}...")
 
