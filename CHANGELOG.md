@@ -45,6 +45,36 @@ See [examples/dynamic_prompt_example.py](examples/dynamic_prompt_example.py) for
 
 ---
 
+### Added - Parallel Tool Execution
+
+**New Feature: Concurrent Tool Execution with `asyncio.gather()`**
+
+When the LLM requests multiple tool calls in a single response, they now execute in parallel instead of sequentially.
+
+**Features**:
+- Tools execute concurrently using `asyncio.gather()`
+- Each tool call tracked by `tool_call_id` for accurate timing
+- `parallel_group_id` groups tool calls from the same batch
+- Tracing correctly handles overlapping start/end events
+- Termination tools still work (checked after all tools complete)
+- Backward compatible with existing sequential code
+
+**Performance**:
+```
+# Before (sequential): Tool A (1s) → Tool B (1s) → Tool C (1s) = 3s total
+# After (parallel):    Tool A, B, C execute together = ~1s total
+```
+
+**Trace Events**:
+```json
+{"event_type": "tool_call", "tool_name": "get_weather", "tool_call_id": "call_abc", "parallel_group_id": "grp_123"}
+{"event_type": "tool_call", "tool_name": "get_stock", "tool_call_id": "call_def", "parallel_group_id": "grp_123"}
+{"event_type": "tool_result", "tool_name": "get_stock", "tool_call_id": "call_def", "elapsed_time": 0.3}
+{"event_type": "tool_result", "tool_name": "get_weather", "tool_call_id": "call_abc", "elapsed_time": 0.5}
+```
+
+---
+
 ### Added - Per-Run Trace Isolation
 
 **New Feature: `{run_id}` Placeholder for Trace Files**

@@ -22,6 +22,8 @@ class TraceEvent:
         parent_agent: Name of the parent agent (for delegated agents)
         delegation_depth: Depth in the delegation chain (0 = top agent)
         tool_name: Name of the tool (for tool-related events)
+        tool_call_id: Unique ID for this tool call (for matching start/end in parallel execution)
+        parallel_group_id: Groups tool calls that execute in parallel (same group = same batch)
         arguments: Arguments passed to the tool
         result: Result from the tool or agent
         error: Error message if an error occurred
@@ -35,6 +37,8 @@ class TraceEvent:
     parent_agent: Optional[str] = None
     delegation_depth: int = 0
     tool_name: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    parallel_group_id: Optional[str] = None
     arguments: Optional[Dict[str, Any]] = None
     result: Optional[Any] = None
     error: Optional[str] = None
@@ -104,6 +108,8 @@ class TracingKit:
         self._delegation_depth: int = 0  # Track delegation depth
         self._current_parent: Optional[str] = None  # Track current parent agent
         self._run_id: Optional[str] = None  # Current run ID
+        # Dict-based tracking for parallel tool calls (keyed by tool_call_id)
+        self._tool_start_times: Dict[str, float] = {}
 
     def _add_event(self, event: TraceEvent):
         """Add an event and optionally export it."""
@@ -129,6 +135,7 @@ class TracingKit:
         # Clear state from previous run
         self.events.clear()
         self._operation_stack.clear()
+        self._tool_start_times.clear()
         self._delegation_depth = 0
         self._current_parent = None
 
@@ -236,7 +243,15 @@ class TracingKit:
         )
         self._add_event(event)
 
-    def start_tool_call(self, agent_name: str, tool_name: str, arguments: Dict[str, Any], metadata: Optional[Dict] = None):
+    def start_tool_call(
+        self,
+        agent_name: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        metadata: Optional[Dict] = None,
+        tool_call_id: Optional[str] = None,
+        parallel_group_id: Optional[str] = None
+    ):
         """
         Record tool call start.
 
@@ -245,15 +260,21 @@ class TracingKit:
             tool_name: Name of the tool
             arguments: Arguments passed to the tool
             metadata: Optional metadata
+            tool_call_id: Unique ID for this tool call (for parallel execution tracking)
+            parallel_group_id: Groups tool calls that execute in parallel
         """
         start_time = time.time()
 
-        # Push to stack
-        self._operation_stack.append({
-            'type': 'tool',
-            'name': tool_name,
-            'start_time': start_time
-        })
+        if tool_call_id:
+            # Dict-based tracking for parallel tool calls
+            self._tool_start_times[tool_call_id] = start_time
+        else:
+            # Legacy: Push to stack for sequential tool calls
+            self._operation_stack.append({
+                'type': 'tool',
+                'name': tool_name,
+                'start_time': start_time
+            })
 
         event = TraceEvent(
             timestamp=start_time,
@@ -262,12 +283,23 @@ class TracingKit:
             parent_agent=self._current_parent,
             delegation_depth=self._delegation_depth,
             tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            parallel_group_id=parallel_group_id,
             arguments=arguments,
             metadata=metadata or {}
         )
         self._add_event(event)
 
-    def end_tool_call(self, agent_name: str, tool_name: str, result: Any, error: Optional[str] = None, metadata: Optional[Dict] = None):
+    def end_tool_call(
+        self,
+        agent_name: str,
+        tool_name: str,
+        result: Any,
+        error: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        tool_call_id: Optional[str] = None,
+        parallel_group_id: Optional[str] = None
+    ):
         """
         Record tool call end.
 
@@ -277,12 +309,18 @@ class TracingKit:
             result: Result from the tool
             error: Error message if tool failed
             metadata: Optional metadata
+            tool_call_id: Unique ID for this tool call (for parallel execution tracking)
+            parallel_group_id: Groups tool calls that execute in parallel
         """
         end_time = time.time()
 
-        # Pop from stack and calculate elapsed time
+        # Calculate elapsed time
         elapsed = None
-        if self._operation_stack and self._operation_stack[-1]['type'] == 'tool':
+        if tool_call_id and tool_call_id in self._tool_start_times:
+            # Dict-based tracking for parallel tool calls
+            elapsed = end_time - self._tool_start_times.pop(tool_call_id)
+        elif self._operation_stack and self._operation_stack[-1]['type'] == 'tool':
+            # Legacy: Pop from stack for sequential tool calls
             op = self._operation_stack.pop()
             elapsed = end_time - op['start_time']
 
@@ -296,6 +334,8 @@ class TracingKit:
             parent_agent=self._current_parent,
             delegation_depth=self._delegation_depth,
             tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            parallel_group_id=parallel_group_id,
             result=result_str,
             error=error,
             elapsed_time=elapsed,
@@ -491,6 +531,7 @@ class TracingKit:
         """Clear all trace events."""
         self.events.clear()
         self._operation_stack.clear()
+        self._tool_start_times.clear()
 
     def __str__(self) -> str:
         """String representation with summary."""

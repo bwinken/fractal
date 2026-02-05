@@ -1,6 +1,7 @@
 """
 Base Agent implementation with OpenAI integration.
 """
+import asyncio
 import json
 import os
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -403,45 +404,133 @@ class BaseAgent:
 
                 # Check if agent wants to call tools
                 if message.tool_calls:
-                    # Process each tool call
+                    # Generate parallel_group_id if multiple tools
+                    parallel_group_id = None
+                    if len(message.tool_calls) > 1:
+                        import uuid as uuid_mod
+                        parallel_group_id = uuid_mod.uuid4().hex[:8]
+
+                    # Phase 1: Parse all tool arguments and prepare execution tasks
+                    valid_tool_calls = []
                     for tool_call in message.tool_calls:
                         function_name = tool_call.function.name
 
                         # Parse tool arguments with error handling
                         try:
                             function_args = json.loads(tool_call.function.arguments)
+                            valid_tool_calls.append({
+                                'tool_call': tool_call,
+                                'function_name': function_name,
+                                'function_args': function_args
+                            })
                         except json.JSONDecodeError as e:
-                            # Add error message for invalid tool arguments
+                            # Add error message for invalid tool arguments immediately
                             self.messages.append({
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": function_name,
                                 "content": f"Error: Invalid tool arguments - {str(e)}"
                             })
-                            continue
 
-                        # Trace tool call start
+                    if valid_tool_calls:
+                        # Phase 2: Trace all tool call starts
                         if self.tracing:
-                            self.tracing.start_tool_call(self.name, function_name, function_args)
+                            for tc_info in valid_tool_calls:
+                                self.tracing.start_tool_call(
+                                    self.name,
+                                    tc_info['function_name'],
+                                    tc_info['function_args'],
+                                    tool_call_id=tc_info['tool_call'].id,
+                                    parallel_group_id=parallel_group_id
+                                )
 
-                        # Execute tool (async)
-                        tool_result = await self.execute_tool(function_name, **function_args)
-
-                        # Trace tool call end
-                        if self.tracing:
-                            self.tracing.end_tool_call(
-                                self.name,
-                                function_name,
-                                tool_result.content,
-                                error=tool_result.error,
-                                metadata={'terminate': tool_result.metadata and tool_result.metadata.get('terminate', False)}
+                        # Phase 3: Execute all tools in parallel
+                        async def execute_single_tool(tc_info):
+                            return await self.execute_tool(
+                                tc_info['function_name'],
+                                **tc_info['function_args']
                             )
 
-                        # Check if this is a termination tool
-                        should_terminate = tool_result.metadata and tool_result.metadata.get('terminate', False)
+                        tool_results = await asyncio.gather(
+                            *[execute_single_tool(tc_info) for tc_info in valid_tool_calls],
+                            return_exceptions=True
+                        )
 
-                        if should_terminate and not tool_result.error:
-                            # Termination tool executed successfully - exit immediately
+                        # Phase 4: Process results and trace tool call ends
+                        termination_result = None
+                        for tc_info, tool_result in zip(valid_tool_calls, tool_results):
+                            tool_call = tc_info['tool_call']
+                            function_name = tc_info['function_name']
+
+                            # Handle exceptions from gather
+                            if isinstance(tool_result, Exception):
+                                error_msg = str(tool_result)
+                                if self.tracing:
+                                    self.tracing.end_tool_call(
+                                        self.name,
+                                        function_name,
+                                        None,
+                                        error=error_msg,
+                                        tool_call_id=tool_call.id,
+                                        parallel_group_id=parallel_group_id
+                                    )
+                                self.messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": function_name,
+                                    "content": f"Error: {error_msg}"
+                                })
+                                continue
+
+                            # Trace tool call end
+                            if self.tracing:
+                                self.tracing.end_tool_call(
+                                    self.name,
+                                    function_name,
+                                    tool_result.content,
+                                    error=tool_result.error,
+                                    metadata={'terminate': tool_result.metadata and tool_result.metadata.get('terminate', False)},
+                                    tool_call_id=tool_call.id,
+                                    parallel_group_id=parallel_group_id
+                                )
+
+                            # Check if this is a termination tool (save for later, process all first)
+                            should_terminate = tool_result.metadata and tool_result.metadata.get('terminate', False)
+                            if should_terminate and not tool_result.error and termination_result is None:
+                                termination_result = (function_name, tool_result)
+
+                            # Prepare tool response
+                            if tool_result.error:
+                                tool_response = f"Error: {tool_result.error}"
+                            else:
+                                # Serialize tool result content for LLM
+                                if isinstance(tool_result.content, str):
+                                    tool_response = tool_result.content
+                                elif isinstance(tool_result.content, BaseModel):
+                                    tool_response = tool_result.content.model_dump_json(indent=2)
+                                elif isinstance(tool_result.content, list):
+                                    # Handle list of Pydantic models or primitives
+                                    if tool_result.content and isinstance(tool_result.content[0], BaseModel):
+                                        serialized_list = [item.model_dump() for item in tool_result.content]
+                                        tool_response = json.dumps(serialized_list, indent=2, ensure_ascii=False)
+                                    else:
+                                        tool_response = json.dumps(tool_result.content, indent=2, ensure_ascii=False)
+                                elif isinstance(tool_result.content, dict):
+                                    tool_response = json.dumps(tool_result.content, indent=2, ensure_ascii=False)
+                                else:
+                                    tool_response = str(tool_result.content)
+
+                            # Add tool result to messages
+                            self.messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": function_name,
+                                "content": tool_response
+                            })
+
+                        # Phase 5: Handle termination after all tools processed
+                        if termination_result:
+                            function_name, tool_result = termination_result
                             result = AgentResult(
                                 content=tool_result.content,
                                 agent_name=self.name,
@@ -457,37 +546,6 @@ class BaseAgent:
                                 self.tracing.end_agent(self.name, result.content, success=True, metadata={'terminated_by_tool': function_name})
                                 self.tracing.end_run()
                             return result
-
-                        # Prepare tool response
-                        if tool_result.error:
-                            tool_response = f"Error: {tool_result.error}"
-                        else:
-                            # Serialize tool result content for LLM
-                            if isinstance(tool_result.content, str):
-                                tool_response = tool_result.content
-                            elif isinstance(tool_result.content, BaseModel):
-                                tool_response = tool_result.content.model_dump_json(indent=2)
-                            elif isinstance(tool_result.content, list):
-                                # Handle list of Pydantic models or primitives
-                                if tool_result.content and isinstance(tool_result.content[0], BaseModel):
-                                    # List of Pydantic models
-                                    serialized_list = [item.model_dump() for item in tool_result.content]
-                                    tool_response = json.dumps(serialized_list, indent=2, ensure_ascii=False)
-                                else:
-                                    # List of primitives
-                                    tool_response = json.dumps(tool_result.content, indent=2, ensure_ascii=False)
-                            elif isinstance(tool_result.content, dict):
-                                tool_response = json.dumps(tool_result.content, indent=2, ensure_ascii=False)
-                            else:
-                                tool_response = str(tool_result.content)
-
-                        # Add tool result to messages
-                        self.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": function_name,
-                            "content": tool_response
-                        })
 
                     # Continue loop to get next response
                     continue
