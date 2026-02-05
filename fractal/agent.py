@@ -450,7 +450,8 @@ class BaseAgent:
                                 tc_info['function_name'],
                                 **tc_info['function_args']
                             )
-
+                            
+                        import asyncio
                         tool_results = await asyncio.gather(
                             *[execute_single_tool(tc_info) for tc_info in valid_tool_calls],
                             return_exceptions=True
