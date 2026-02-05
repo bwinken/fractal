@@ -1,53 +1,94 @@
 """
-Delegation-Aware Tracing Example
+Delegation Chain Tracing Example
+================================
 
-This example demonstrates how TracingKit automatically tracks complete delegation chains.
+This example demonstrates how tracing automatically propagates through
+multi-agent delegation chains to capture the complete execution flow.
 
-Key features:
-- Top agent's TracingKit "infects" all delegated agents
-- Tracks parent_agent and delegation_depth for each event
-- Records delegation start/end events
-- Works seamlessly with multi-level delegation (A -> B -> C)
-- Uses {run_id} placeholder for per-run trace files (FastAPI-safe)
+OVERVIEW
+--------
+When a coordinator agent delegates to specialists, you want to trace the
+ENTIRE delegation chain, not just the top-level agent. Fractal's TracingKit
+solves this with "tracing infection":
+
+1. Enable tracing on the coordinator (top-level agent)
+2. When coordinator delegates to a specialist, TracingKit automatically
+   "infects" the specialist with the same tracing instance
+3. All events from all agents end up in the same trace
+
+KEY FIELDS
+----------
+Each trace event includes delegation-aware fields:
+- parent_agent: Name of the agent that delegated (None for top-level)
+- delegation_depth: How deep in the chain (0 = coordinator, 1 = first delegate)
+- event_type: Includes 'agent_delegate' and 'delegation_end' events
+
+TRACE STRUCTURE
+---------------
+For a chain: Coordinator -> Researcher -> Analyst
+
+Events will show:
+- agent_start (Coordinator, depth=0)
+- agent_delegate (Coordinator -> Researcher)
+- agent_start (Researcher, depth=1, parent=Coordinator)
+- agent_delegate (Researcher -> Analyst)
+- agent_start (Analyst, depth=2, parent=Researcher)
+- tool_call (Analyst.analyze, depth=2)
+- tool_result (Analyst.analyze, depth=2)
+- agent_end (Analyst, depth=2)
+- delegation_end (Researcher <- Analyst)
+- agent_end (Researcher, depth=1)
+- delegation_end (Coordinator <- Researcher)
+- agent_end (Coordinator, depth=0)
+
+PER-RUN ISOLATION
+-----------------
+Use {run_id} placeholder for per-run trace files (essential for FastAPI):
+
+    tracing_output_file="traces/delegation_{run_id}.jsonl"
+
+Each run() creates a separate file with unique run_id.
 
 To run:
     python examples/delegation_tracing_example.py
 """
 import os
 import asyncio
-import json
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from fractal import BaseAgent, AgentToolkit
 
-# Load environment
+# Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Set dummy key for testing
-if not os.getenv("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = "sk-test-dummy-key"
+# Set dummy key for testing (remove if using real API)
+os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy-key")
+
+# Ensure traces directory exists
+TRACES_DIR = Path(__file__).parent / "traces"
+TRACES_DIR.mkdir(exist_ok=True)
 
 
-# ============================================================================
-# Example Agents
-# ============================================================================
+# =============================================================================
+# Specialist Agents (tracing disabled - will be "infected")
+# =============================================================================
 
-class DataAnalystAgent(BaseAgent):
-    """A specialist agent that analyzes data."""
+class AnalystAgent(BaseAgent):
+    """Specialist that analyzes data."""
 
     def __init__(self):
         super().__init__(
-            name="DataAnalyst",
-            system_prompt="You are a data analyst. Analyze data and provide insights.",
+            name="Analyst",
+            system_prompt="You analyze data.",
             model="gpt-4o-mini",
             client=AsyncOpenAI(),
-            enable_tracing=False  # Will be infected by coordinator's tracing
+            enable_tracing=False  # Will inherit tracing from coordinator
         )
 
     @AgentToolkit.register_as_tool
-    def analyze_data(self, data: str) -> dict:
+    def analyze(self, data: str) -> dict:
         """
         Analyze data.
 
@@ -58,29 +99,24 @@ class DataAnalystAgent(BaseAgent):
             Analysis results
         """
         import time
-        time.sleep(0.1)  # Simulate analysis
-        return {
-            "data": data,
-            "word_count": len(data.split()),
-            "char_count": len(data),
-            "sentiment": "positive"
-        }
+        time.sleep(0.1)
+        return {"data": data, "word_count": len(data.split())}
 
 
-class ResearchAgent(BaseAgent):
-    """A specialist agent that researches topics."""
+class ResearcherAgent(BaseAgent):
+    """Specialist that researches topics."""
 
     def __init__(self):
         super().__init__(
             name="Researcher",
-            system_prompt="You are a researcher. Research topics and provide information.",
+            system_prompt="You research topics.",
             model="gpt-4o-mini",
             client=AsyncOpenAI(),
-            enable_tracing=False  # Will be infected by coordinator's tracing
+            enable_tracing=False  # Will inherit tracing from coordinator
         )
 
     @AgentToolkit.register_as_tool
-    def research_topic(self, topic: str) -> dict:
+    def research(self, topic: str) -> dict:
         """
         Research a topic.
 
@@ -88,260 +124,120 @@ class ResearchAgent(BaseAgent):
             topic (str): Topic to research
 
         Returns:
-            Research results
+            Research findings
         """
         import time
-        time.sleep(0.1)  # Simulate research
-        return {
-            "topic": topic,
-            "summary": f"Research findings about {topic}",
-            "sources": ["source1", "source2"]
-        }
+        time.sleep(0.1)
+        return {"topic": topic, "summary": f"Research on {topic}"}
 
+
+# =============================================================================
+# Coordinator Agent (tracing enabled at top level)
+# =============================================================================
 
 class CoordinatorAgent(BaseAgent):
-    """A coordinator agent that delegates to specialists."""
+    """Coordinator that delegates to specialists."""
 
-    def __init__(self, analyst: DataAnalystAgent, researcher: ResearchAgent, output_dir: str = "examples/traces"):
+    def __init__(self, analyst: BaseAgent, researcher: BaseAgent):
         super().__init__(
             name="Coordinator",
-            system_prompt="You coordinate tasks by delegating to specialist agents.",
+            system_prompt="You coordinate tasks by delegating.",
             model="gpt-4o-mini",
             client=AsyncOpenAI(),
-            enable_tracing=True,  # Only enable tracing at the top level
-            # Each run() creates a separate file with unique run_id
-            tracing_output_file=f"{output_dir}/delegation_{{run_id}}.jsonl"
+            enable_tracing=True,  # Enable tracing here
+            tracing_output_file=str(TRACES_DIR / "delegation_{run_id}.jsonl")
         )
 
-        # Register specialists as delegates
-        self.register_delegate(
-            analyst,
-            tool_name="ask_analyst",
-            description="Delegate data analysis tasks to the data analyst"
-        )
-        self.register_delegate(
-            researcher,
-            tool_name="ask_researcher",
-            description="Delegate research tasks to the researcher"
-        )
+        self.register_delegate(analyst, tool_name="ask_analyst")
+        self.register_delegate(researcher, tool_name="ask_researcher")
 
 
-# ============================================================================
-# Examples
-# ============================================================================
-
-async def example_basic_delegation_tracing():
-    """Example 1: Basic delegation tracing."""
-    print("=" * 70)
-    print("Example 1: Basic Delegation Tracing")
-    print("=" * 70)
-
-    # Create agents - only enable tracing on coordinator
-    analyst = DataAnalystAgent()
-    researcher = ResearchAgent()
-    coordinator = CoordinatorAgent(analyst, researcher)
-
-    print(f"\n[Setup]")
-    print(f"  Coordinator tracing: {coordinator.tracing is not None}")
-    print(f"  Output file pattern: {coordinator.tracing.output_file_pattern}")
-    print(f"  Analyst tracing: {analyst.tracing is not None}")
-    print(f"  Researcher tracing: {researcher.tracing is not None}")
-
-    # Run coordinator (will delegate to specialists)
-    print(f"\n[Running coordinator...]")
-    result = await coordinator.run(
-        "Please analyze this data and research the topic: AI agents",
-        max_iterations=5
-    )
-
-    print(f"\n[Completed]")
-    print(f"  Success: {result.success}")
-
-    # Show trace
-    if coordinator.tracing:
-        print("\n" + "-" * 70)
-        print("Trace Summary")
-        print("-" * 70)
-
-        summary = coordinator.tracing.get_summary()
-        print(f"  Total events: {summary['total_events']}")
-        print(f"  Agent runs: {summary['agent_runs']}")
-        print(f"  Tool calls: {summary['tool_calls']}")
-        print(f"  Total time: {summary['total_time']:.3f}s")
-
-        print("\n" + "-" * 70)
-        print("Delegation Chain")
-        print("-" * 70)
-
-        events = coordinator.tracing.get_trace()
-
-        # Show agent starts with hierarchy
-        agent_starts = [e for e in events if e.event_type == 'agent_start']
-        for event in agent_starts:
-            indent = "  " * event.delegation_depth
-            parent_info = f" <- {event.parent_agent}" if event.parent_agent else ""
-            print(f"{indent}{event.agent_name} (depth={event.delegation_depth}){parent_info}")
-
-        # Show delegation events
-        print("\n" + "-" * 70)
-        print("Delegation Events")
-        print("-" * 70)
-
-        delegation_events = [
-            e for e in events
-            if e.event_type in ('agent_delegate', 'delegation_end')
-        ]
-        for event in delegation_events:
-            if event.event_type == 'agent_delegate':
-                to_agent = event.arguments.get('to_agent') if event.arguments else 'unknown'
-                print(f"  Delegate: {event.agent_name} -> {to_agent}")
-            else:
-                to_agent = event.metadata.get('to_agent') if event.metadata else 'unknown'
-                success = "[OK]" if event.metadata.get('success') else "[ERROR]"
-                print(f"  Return: {to_agent} -> {event.agent_name} {success}")
-
-        # Show auto-exported file path (uses {run_id} pattern)
-        print(f"\n[OK] Trace auto-exported to: {coordinator.tracing.output_file}")
-
-    print("\n" + "=" * 70)
-
-
-async def example_multi_level_delegation():
-    """Example 2: Multi-level delegation (A -> B -> C)."""
-    print("\nExample 2: Multi-Level Delegation (A -> B -> C)")
-    print("=" * 70)
-
-    # Create a 3-level hierarchy
-    analyst_c = DataAnalystAgent()
-    analyst_c.name = "AnalystC"
-
-    researcher_b = ResearchAgent()
-    researcher_b.name = "ResearcherB"
-    researcher_b.register_delegate(analyst_c, tool_name="ask_analyst")
-
-    coordinator_a = CoordinatorAgent(DataAnalystAgent(), researcher_b)
-    coordinator_a.name = "CoordinatorA"
-
-    print(f"\n[Setup]")
-    print(f"  Hierarchy: CoordinatorA -> ResearcherB -> AnalystC")
-    print(f"  Only CoordinatorA has tracing enabled")
-
-    # Run
-    print(f"\n[Running CoordinatorA...]")
-    result = await coordinator_a.run(
-        "Research AI agents and analyze the data",
-        max_iterations=5
-    )
-
-    print(f"\n[Completed]")
-    print(f"  Success: {result.success}")
-
-    if coordinator_a.tracing:
-        print("\n" + "-" * 70)
-        print("Multi-Level Delegation Chain")
-        print("-" * 70)
-
-        events = coordinator_a.tracing.get_trace()
-        agent_starts = [e for e in events if e.event_type == 'agent_start']
-
-        for event in agent_starts:
-            indent = "  " * event.delegation_depth
-            parent_info = f" <- {event.parent_agent}" if event.parent_agent else ""
-            print(f"{indent}{event.agent_name} (depth={event.delegation_depth}){parent_info}")
-
-        # Show max delegation depth
-        max_depth = max(e.delegation_depth for e in events)
-        print(f"\n[OK] Maximum delegation depth: {max_depth}")
-
-        # Show auto-exported file path
-        print(f"[OK] Trace auto-exported to: {coordinator_a.tracing.output_file}")
-
-    print("\n" + "=" * 70)
-
-
-async def example_analyze_delegation_trace():
-    """Example 3: Analyze delegation trace in detail."""
-    print("\nExample 3: Analyze Delegation Trace")
-    print("=" * 70)
-
-    # Create and run agents
-    analyst = DataAnalystAgent()
-    researcher = ResearchAgent()
-    coordinator = CoordinatorAgent(analyst, researcher)
-
-    print(f"\n[Running analysis task...]")
-    await coordinator.run("Analyze: Hello World", max_iterations=5)
-
-    if coordinator.tracing:
-        events = coordinator.tracing.get_trace()
-
-        # Group events by delegation depth
-        print("\n" + "-" * 70)
-        print("Events by Delegation Depth")
-        print("-" * 70)
-
-        events_by_depth = {}
-        for event in events:
-            depth = event.delegation_depth
-            if depth not in events_by_depth:
-                events_by_depth[depth] = []
-            events_by_depth[depth].append(event)
-
-        for depth in sorted(events_by_depth.keys()):
-            print(f"\nDepth {depth} ({len(events_by_depth[depth])} events):")
-            for event in events_by_depth[depth]:
-                event_name = event.tool_name or event.agent_name
-                print(f"  - {event.event_type}: {event_name}")
-
-        # Show time analysis
-        print("\n" + "-" * 70)
-        print("Time Analysis")
-        print("-" * 70)
-
-        agent_ends = [e for e in events if e.event_type == 'agent_end' and e.elapsed_time]
-        for event in agent_ends:
-            indent = "  " * event.delegation_depth
-            print(f"{indent}{event.agent_name}: {event.elapsed_time:.3f}s")
-
-        # Show delegation flow
-        print("\n" + "-" * 70)
-        print("Delegation Flow (Chronological)")
-        print("-" * 70)
-
-        for event in events:
-            if event.event_type in ('agent_delegate', 'delegation_end', 'agent_start', 'agent_end'):
-                timestamp_str = f"{event.timestamp:.2f}"
-                indent = "  " * event.delegation_depth
-
-                if event.event_type == 'agent_delegate':
-                    to_agent = event.arguments.get('to_agent') if event.arguments else '?'
-                    print(f"[{timestamp_str}] {indent}-> Delegate to {to_agent}")
-                elif event.event_type == 'delegation_end':
-                    print(f"[{timestamp_str}] {indent}← Return from delegation")
-                elif event.event_type == 'agent_start':
-                    print(f"[{timestamp_str}] {indent}[START] {event.agent_name}")
-                elif event.event_type == 'agent_end':
-                    print(f"[{timestamp_str}] {indent}[END] {event.agent_name}")
-
-    print("\n" + "=" * 70)
-
+# =============================================================================
+# Main: Demonstrate Delegation Tracing
+# =============================================================================
 
 async def main():
-    """Run all delegation tracing examples."""
-    examples = [
-        ("Basic Delegation", example_basic_delegation_tracing),
-        ("Multi-Level Delegation", example_multi_level_delegation),
-        ("Analyze Trace", example_analyze_delegation_trace),
-    ]
+    """Run the delegation tracing example."""
+    print("=" * 70)
+    print("Delegation Chain Tracing Example")
+    print("=" * 70)
 
-    for name, func in examples:
-        try:
-            await func()
-            print(f"\n[OK] {name} example completed\n")
-        except Exception as e:
-            print(f"\n[ERROR] {name} example failed: {e}")
-            import traceback
-            traceback.print_exc()
+    # 1. Create agents
+    print("\n[1] Create Agents")
+    print("-" * 40)
+    analyst = AnalystAgent()
+    researcher = ResearcherAgent()
+    coordinator = CoordinatorAgent(analyst, researcher)
+
+    print(f"  Coordinator: tracing={'enabled' if coordinator.tracing else 'disabled'}")
+    print(f"  Analyst: tracing={'enabled' if analyst.tracing else 'disabled'}")
+    print(f"  Researcher: tracing={'enabled' if researcher.tracing else 'disabled'}")
+    print("\n  Note: Specialists will be 'infected' with coordinator's tracing")
+
+    # 2. Simulate delegation with manual tracing
+    print("\n[2] Simulate Delegation Chain")
+    print("-" * 40)
+
+    # Start coordinator
+    coordinator.tracing.start_run()
+    coordinator.tracing.start_agent("Coordinator", "Demo task")
+
+    # Simulate delegation to analyst
+    coordinator.tracing.start_delegation("Coordinator", "Analyst", "analyze data")
+    coordinator.tracing.start_agent("Analyst", "analyze data")
+
+    # Analyst tool call
+    coordinator.tracing.start_tool_call("Analyst", "analyze", {"data": "test"})
+    result = analyst.toolkit.execute_tool("analyze", data="test data")
+    coordinator.tracing.end_tool_call("Analyst", "analyze", result.content)
+
+    coordinator.tracing.end_agent("Analyst", "analysis complete")
+    coordinator.tracing.end_delegation("Coordinator", "Analyst", "done")
+
+    coordinator.tracing.end_agent("Coordinator", "task complete")
+
+    # 3. Show delegation chain
+    print("\n[3] Delegation Chain")
+    print("-" * 40)
+    events = coordinator.tracing.get_trace()
+    agent_events = [e for e in events if e.event_type in ('agent_start', 'agent_end')]
+    for event in agent_events:
+        indent = "  " * event.delegation_depth
+        parent = f" (parent={event.parent_agent})" if event.parent_agent else ""
+        print(f"  {indent}{event.event_type}: {event.agent_name} depth={event.delegation_depth}{parent}")
+
+    # 4. Show trace summary
+    print("\n[4] Trace Summary")
+    print("-" * 40)
+    summary = coordinator.tracing.get_summary()
+    print(f"  Total events: {summary['total_events']}")
+    print(f"  Agent runs: {summary['agent_runs']}")
+    print(f"  Tool calls: {summary['tool_calls']}")
+
+    # 5. Export trace
+    print("\n[5] Export Trace")
+    print("-" * 40)
+    output_file = coordinator.tracing.output_file
+    coordinator.tracing.export_json(output_file)
+    print(f"  Exported to: {output_file}")
+    print(f"  (Uses {{run_id}} pattern: {coordinator.tracing.output_file_pattern})")
+
+    # 6. Show delegation-aware events
+    print("\n[6] Delegation Events")
+    print("-" * 40)
+    delegation_events = [e for e in events if 'delegat' in e.event_type]
+    for event in delegation_events:
+        if event.event_type == 'agent_delegate':
+            to = event.arguments.get('to_agent') if event.arguments else '?'
+            print(f"  {event.agent_name} -> {to}")
+        else:
+            to = event.metadata.get('to_agent') if event.metadata else '?'
+            print(f"  {event.agent_name} <- {to} (returned)")
+
+    print("\n" + "=" * 70)
+    print("[OK] Delegation tracing example completed!")
+    print("=" * 70)
+    print(f"\nView trace: fractal view {output_file}")
 
 
 if __name__ == "__main__":

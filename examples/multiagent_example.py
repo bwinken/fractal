@@ -1,14 +1,45 @@
 """
-Multi-Agent Collaboration Example
+Multi-Agent Delegation Example
+==============================
 
-This example shows how agents can collaborate and delegate tasks to each other.
+This example demonstrates how to build multi-agent systems where a coordinator
+agent delegates tasks to specialist agents using the `register_delegate()` API.
 
-Scenario:
-- Manager Agent: Coordinates tasks
-- Researcher Agent: Gathers information
-- Writer Agent: Creates content
+OVERVIEW
+--------
+Multi-agent systems in Fractal follow a delegation pattern:
 
-The Manager delegates to specialists based on the task.
+1. Create specialist agents with domain-specific tools
+2. Create a coordinator agent that registers specialists as delegates
+3. The coordinator can now "call" specialists as tools
+
+This creates a tree-shaped workflow: Coordinator -> Specialists.
+
+KEY API
+-------
+coordinator.register_delegate(
+    agent,              # The specialist agent to register
+    tool_name="...",    # Tool name for delegation (e.g., "ask_researcher")
+    description="..."   # Description shown to the LLM
+)
+
+HOW IT WORKS
+------------
+1. Coordinator receives user query
+2. LLM decides to delegate (calls the delegation tool)
+3. Specialist agent.run() is called with the delegated query
+4. Specialist's response returns to coordinator
+5. Coordinator can delegate to more agents or respond
+
+BENEFITS
+--------
+- Separation of concerns (each agent has clear responsibility)
+- Scalable (add more specialists as needed)
+- Composable (specialists can have their own delegates)
+- Traceable (delegation chains are tracked in traces)
+
+To run:
+    python examples/multiagent_example.py
 """
 import os
 import asyncio
@@ -16,28 +47,26 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from fractal import BaseAgent, AgentToolkit
-from pydantic import BaseModel
 
-# Load environment
+# Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
-# Set dummy key for testing
-if not os.getenv("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = "sk-test-dummy-key"
+# Set dummy key for testing (remove if using real API)
+os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy-key")
 
 
-# ============================================================================
+# =============================================================================
 # Specialist Agents
-# ============================================================================
+# =============================================================================
 
 class ResearcherAgent(BaseAgent):
-    """Agent that gathers information."""
+    """Specialist agent for research and information gathering."""
 
     def __init__(self):
         super().__init__(
             name="Researcher",
-            system_prompt="You are a researcher. Gather and organize information thoroughly.",
+            system_prompt="You are a research specialist. Gather and organize information.",
             model="gpt-4o-mini",
             client=AsyncOpenAI()
         )
@@ -53,59 +82,23 @@ class ResearcherAgent(BaseAgent):
         Returns:
             List of facts
         """
-        # Simulate research
         return [
             f"Fact 1: {topic} is widely studied",
             f"Fact 2: Recent advances in {topic}",
             f"Fact 3: Future trends in {topic}"
         ]
 
-    @AgentToolkit.register_as_tool
-    async def search_sources(self, topic: str, count: int = 3) -> dict:
-        """
-        Search for sources about a topic.
-
-        Args:
-            topic (str): Topic to search
-            count (int): Number of sources
-
-        Returns:
-            Search results
-        """
-        await asyncio.sleep(0.1)
-        return {
-            "topic": topic,
-            "sources": [f"Source {i+1} about {topic}" for i in range(count)],
-            "total": count
-        }
-
 
 class WriterAgent(BaseAgent):
-    """Agent that creates written content."""
+    """Specialist agent for content creation."""
 
     def __init__(self):
         super().__init__(
             name="Writer",
-            system_prompt="You are a professional writer. Create clear, engaging content.",
+            system_prompt="You are a professional writer. Create clear content.",
             model="gpt-4o-mini",
             client=AsyncOpenAI()
         )
-
-    @AgentToolkit.register_as_tool
-    def write_summary(self, content: str, max_words: int = 100) -> str:
-        """
-        Write a summary of content.
-
-        Args:
-            content (str): Content to summarize
-            max_words (int): Maximum words
-
-        Returns:
-            Summary
-        """
-        # Simulate writing
-        words = content.split()[:max_words]
-        return f"Summary: {' '.join(words)}..."
 
     @AgentToolkit.register_as_tool
     def format_article(self, title: str, content: str) -> str:
@@ -114,42 +107,41 @@ class WriterAgent(BaseAgent):
 
         Args:
             title (str): Article title
-            content (str): Article content
+            content (str): Article body
 
         Returns:
             Formatted article
         """
-        return f"""
-# {title}
+        return f"# {title}\n\n{content}\n\n---\n*By WriterAgent*"
 
-{content}
 
----
-*Article by WriterAgent*
-        """.strip()
-
+# =============================================================================
+# Coordinator Agent
+# =============================================================================
 
 class ManagerAgent(BaseAgent):
-    """Manager agent that delegates to specialists."""
+    """
+    Coordinator agent that delegates to specialists.
+
+    The manager can:
+    1. Receive complex tasks from users
+    2. Delegate sub-tasks to Researcher and Writer
+    3. Combine results and respond
+    """
 
     def __init__(self, researcher: BaseAgent, writer: BaseAgent):
         super().__init__(
             name="Manager",
             system_prompt="""You are a project manager coordinating a team.
-            You have access to:
-            - Researcher: for gathering information
-            - Writer: for creating content
-
-            Delegate tasks appropriately and coordinate the work.""",
+            - Use ask_researcher for information gathering
+            - Use ask_writer for content creation
+            Delegate appropriately based on the task.""",
             model="gpt-4o-mini",
             client=AsyncOpenAI()
         )
 
-        # Store references
-        self.researcher = researcher
-        self.writer = writer
-
-        # Register specialists as delegates (subordinate agents)
+        # Register specialists as delegates
+        # This creates tools that the LLM can call to delegate work
         self.register_delegate(
             researcher,
             tool_name="ask_researcher",
@@ -162,182 +154,84 @@ class ManagerAgent(BaseAgent):
             description="Delegate writing tasks to the Writer"
         )
 
-    @AgentToolkit.register_as_tool
-    def coordinate_task(self, task: str, agents: str) -> str:
-        """
-        Coordinate a task across agents.
 
-        Args:
-            task (str): Task description
-            agents (str): Comma-separated list of agents to coordinate
-
-        Returns:
-            Coordination plan
-        """
-        return f"Coordinating '{task}' with agents: {agents}"
-
-
-# ============================================================================
-# Examples
-# ============================================================================
-
-async def example_basic_delegation():
-    """Example 1: Basic delegation from Manager to Researcher."""
-    print("=" * 70)
-    print("Example 1: Basic Delegation")
-    print("=" * 70)
-
-    # Create agents
-    researcher = ResearcherAgent()
-    writer = WriterAgent()
-    manager = ManagerAgent(researcher, writer)
-
-    print(f"\nManager has {len(manager.get_tools())} tools:")
-    for tool_name in manager.get_tools().keys():
-        print(f"  - {tool_name}")
-
-    # Manager delegates to researcher
-    print("\n[Manager] Asking researcher about AI...")
-    result = await manager.run(
-        "Ask the researcher to gather facts about Artificial Intelligence",
-        max_iterations=5
-    )
-
-    print(f"\n[Result]")
-    print(f"Success: {result.success}")
-    print(f"Content: {result.content}")
-
-    print("\n" + "=" * 70)
-
-
-async def example_multi_agent_workflow():
-    """Example 2: Complex workflow with multiple agents."""
-    print("\nExample 2: Multi-Agent Workflow")
-    print("=" * 70)
-
-    # Create agents
-    researcher = ResearcherAgent()
-    writer = WriterAgent()
-    manager = ManagerAgent(researcher, writer)
-
-    print("\n[Manager] Creating an article about Python...")
-    result = await manager.run(
-        """Create an article about Python programming:
-        1. Ask researcher to gather facts about Python
-        2. Ask writer to format it as an article titled 'Python Programming'""",
-        max_iterations=10
-    )
-
-    print(f"\n[Result]")
-    print(f"Success: {result.success}")
-    print(f"Content preview: {str(result.content)[:200]}...")
-
-    print("\n" + "=" * 70)
-
-
-async def example_direct_agent_call():
-    """Example 3: Direct agent-to-agent communication."""
-    print("\nExample 3: Direct Agent Communication")
-    print("=" * 70)
-
-    researcher = ResearcherAgent()
-    writer = WriterAgent()
-
-    # Researcher does research
-    print("\n[Researcher] Gathering facts...")
-    research_result = await researcher.run(
-        "Gather facts about machine learning",
-        max_iterations=3
-    )
-
-    print(f"Research: {research_result.content}")
-
-    # Writer uses researcher's output
-    print("\n[Writer] Creating article from research...")
-    writer_result = await writer.run(
-        f"Format this as an article titled 'ML Overview': {research_result.content}",
-        max_iterations=3
-    )
-
-    print(f"Article preview: {str(writer_result.content)[:200]}...")
-
-    print("\n" + "=" * 70)
-
-
-async def example_concurrent_delegation():
-    """Example 4: Concurrent delegation to multiple agents."""
-    print("\nExample 4: Concurrent Delegation")
-    print("=" * 70)
-
-    researcher = ResearcherAgent()
-    writer = WriterAgent()
-    manager = ManagerAgent(researcher, writer)
-
-    print("\n[Manager] Delegating to both agents concurrently...")
-
-    # Run multiple delegations concurrently
-    tasks = [
-        researcher.run("Research topic A", max_iterations=3),
-        writer.run("Write about topic B", max_iterations=3),
-    ]
-
-    results = await asyncio.gather(*tasks)
-
-    for i, result in enumerate(results, 1):
-        print(f"\nAgent {i} ({result.agent_name}):")
-        print(f"  Success: {result.success}")
-        print(f"  Content preview: {str(result.content)[:100]}...")
-
-    print("\n" + "=" * 70)
-
-
-async def example_inspect_delegation():
-    """Example 5: Inspect agent delegation setup."""
-    print("\nExample 5: Inspect Agent Setup")
-    print("=" * 70)
-
-    researcher = ResearcherAgent()
-    writer = WriterAgent()
-    manager = ManagerAgent(researcher, writer)
-
-    print(f"\n{manager}\n")
-
-    print("Manager's specialist agents:")
-    print(f"  - Researcher: {researcher.name}")
-    print(f"    Tools: {list(researcher.get_tools().keys())}")
-    print(f"  - Writer: {writer.name}")
-    print(f"    Tools: {list(writer.get_tools().keys())}")
-
-    print("\nManager can delegate via:")
-    delegation_tools = [t for t in manager.get_tools().keys() if 'ask_' in t or 'delegate_' in t]
-    for tool in delegation_tools:
-        print(f"  - {tool}")
-
-    print("\n" + "=" * 70)
-
+# =============================================================================
+# Main: Demonstrate Delegation
+# =============================================================================
 
 async def main():
-    """Run all examples."""
+    """Run the multi-agent delegation example."""
+    print("=" * 70)
+    print("Multi-Agent Delegation Example")
+    print("=" * 70)
+
+    # 1. Create specialist agents
+    print("\n[1] Creating Agents")
+    print("-" * 40)
+    researcher = ResearcherAgent()
+    writer = WriterAgent()
+
+    print(f"  Researcher tools: {list(researcher.get_tools().keys())}")
+    print(f"  Writer tools: {list(writer.get_tools().keys())}")
+
+    # 2. Create coordinator with delegates
+    print("\n[2] Create Coordinator with Delegates")
+    print("-" * 40)
+    manager = ManagerAgent(researcher, writer)
+
+    print(f"  Manager tools: {list(manager.get_tools().keys())}")
+    print("  (Includes delegation tools: ask_researcher, ask_writer)")
+
+    # 3. Show delegation hierarchy
+    print("\n[3] Delegation Hierarchy")
+    print("-" * 40)
+    print("""
+    ManagerAgent (Coordinator)
+    |
+    +-- ask_researcher --> ResearcherAgent
+    |                      +-- gather_facts
+    |
+    +-- ask_writer ------> WriterAgent
+                           +-- format_article
+    """)
+
+    # 4. Test individual agents
+    print("[4] Test Individual Agents (Direct)")
+    print("-" * 40)
+
+    result = researcher.toolkit.execute_tool("gather_facts", topic="Python")
+    print(f"  Researcher.gather_facts('Python'):")
+    print(f"    {result.content}")
+
+    result = writer.toolkit.execute_tool("format_article", title="Test", content="Hello")
+    print(f"\n  Writer.format_article('Test', 'Hello'):")
+    print(f"    {result.content[:50]}...")
+
+    # 5. Run coordinator with delegation
+    print("\n[5] Run with LLM (Delegation)")
+    print("-" * 40)
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if api_key and not api_key.startswith("sk-test"):
+        print("Running manager with real API...")
+        result = await manager.run(
+            "Ask the researcher to gather facts about AI, then ask the writer to format it as an article.",
+            max_iterations=10
+        )
+        print(f"Result: {result.content[:200]}...")
+    else:
+        print("Using dummy API key - LLM delegation skipped.")
+        print("Set real OPENAI_API_KEY to test full delegation.")
+        print("\nExample workflow (with real API):")
+        print("  1. User: 'Research AI and write an article'")
+        print("  2. Manager calls ask_researcher('gather facts about AI')")
+        print("  3. Researcher runs, returns facts")
+        print("  4. Manager calls ask_writer('format as article')")
+        print("  5. Writer runs, returns formatted article")
+        print("  6. Manager responds with final result")
+
     print("\n" + "=" * 70)
-    print("Multi-Agent Collaboration Examples")
-    print("=" * 70 + "\n")
-
-    examples = [
-        ("Basic Delegation", example_basic_delegation),
-        ("Multi-Agent Workflow", example_multi_agent_workflow),
-        ("Direct Communication", example_direct_agent_call),
-        ("Concurrent Delegation", example_concurrent_delegation),
-        ("Inspect Setup", example_inspect_delegation),
-    ]
-
-    for name, example_func in examples:
-        try:
-            await example_func()
-            print(f"\n[OK] {name} completed\n")
-        except Exception as e:
-            print(f"\n[ERROR] {name}: {e}")
-            import traceback
-            traceback.print_exc()
+    print("[OK] Multi-agent delegation example completed!")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

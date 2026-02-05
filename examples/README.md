@@ -1,26 +1,26 @@
 # Examples
 
-Working examples for the Fractal framework.
+Working examples for the Fractal framework. Each example focuses on ONE concept with comprehensive documentation.
 
 ---
 
-## Which Example Should I Read?
+## Quick Reference
 
-| I want to... | Start with | API Key? |
-|--------------|-----------|----------|
+| I want to... | Example | API Key? |
+|--------------|---------|----------|
 | **Get started quickly** | [inheritance_example.py](inheritance_example.py) | **No** |
-| Build an agent without subclassing | [basic_example.py](basic_example.py) | Partial |
+| Use standalone toolkit pattern | [basic_example.py](basic_example.py) | No |
 | Use dynamic system prompts | [dynamic_prompt_example.py](dynamic_prompt_example.py) | **No** |
-| Use async tools or run tools concurrently | [async_example.py](async_example.py) | Yes |
-| Have one agent delegate to another | [multiagent_example.py](multiagent_example.py) | Yes |
-| Handle agents with the same tool names | [tool_namespacing_example.py](tool_namespacing_example.py) | Yes |
-| Build a knowledge Q&A system (RAG) | [rag_example.py](rag_example.py) | Yes |
-| Serve an agent as an HTTP API | [fastapi_example.py](fastapi_example.py) | Yes |
-| Serve multiple agents behind a router | [fastapi_multiagent.py](fastapi_multiagent.py) | Yes |
-| Record and inspect execution traces | [tracing_example.py](tracing_example.py) | Yes |
-| Trace across a delegation chain | [delegation_tracing_example.py](delegation_tracing_example.py) | Yes |
-| See per-run trace isolation (`{run_id}`) | [multi_run_demo.py](multi_run_demo.py) | **No** |
-| See the full trace-to-visualization workflow | [visualization_demo.py](visualization_demo.py) | Yes |
+| Use async tools | [async_example.py](async_example.py) | No |
+| Have agents delegate to each other | [multiagent_example.py](multiagent_example.py) | Optional |
+| Handle same tool names | [tool_namespacing_example.py](tool_namespacing_example.py) | No |
+| Build RAG system | [rag_example.py](rag_example.py) | Yes |
+| Serve agent via HTTP | [fastapi_example.py](fastapi_example.py) | Yes |
+| Serve multiple agents via HTTP | [fastapi_multiagent.py](fastapi_multiagent.py) | Yes |
+| Enable execution tracing | [tracing_example.py](tracing_example.py) | No |
+| Trace delegation chains | [delegation_tracing_example.py](delegation_tracing_example.py) | No |
+| Per-run trace isolation | [multi_run_demo.py](multi_run_demo.py) | **No** |
+| Visualize traces | [visualization_demo.py](visualization_demo.py) | Optional |
 
 ---
 
@@ -30,93 +30,93 @@ Working examples for the Fractal framework.
 # Install the package
 pip install .
 
-# Configure API key
+# Configure API key (optional for many examples)
 cp .env.example .env
 # Edit .env and add your OPENAI_API_KEY
 
-# Run your first example (no API key required for tool introspection)
+# Run your first example
 python examples/inheritance_example.py
 ```
 
 ---
 
-## Example Details
+## Core Patterns
 
-### Core Patterns
+### [inheritance_example.py](inheritance_example.py) - Start Here
 
-These examples cover the fundamental ways to create agents and register tools.
+**No API key required.** The recommended way to build agents.
 
-#### [inheritance_example.py](inheritance_example.py) -- Start Here
+Demonstrates:
+- Subclass `BaseAgent`
+- Use `@AgentToolkit.register_as_tool` decorator
+- Access instance state in tools
+- Inspect tool schemas without LLM
 
-**No API key required** for tool introspection (Example 3).
+### [basic_example.py](basic_example.py) - Standalone Toolkit
 
-Demonstrates the class-based pattern: subclass `BaseAgent`, decorate methods with `@AgentToolkit.register_as_tool`, and let the framework discover tools automatically.
+**No API key required.** Alternative pattern separating tools from agents.
 
-- `WeatherAgent` with weather data tools
-- `MathAgent` with calculation tools
-- Tool schema inspection without calling the LLM
+Demonstrates:
+- Create standalone `AgentToolkit` subclass
+- Attach toolkit to `BaseAgent` via `toolkit=` parameter
+- Reuse toolkits across multiple agents
 
-#### [basic_example.py](basic_example.py)
+### [async_example.py](async_example.py) - Async Tools
 
-Alternative pattern using standalone `AgentToolkit` and agent-to-agent communication. Shows how to pass Pydantic objects between tools and agents.
+**No API key required.** Use async/await with agents.
 
-- `WeatherToolkit` + `WeatherAgent`
-- `TravelToolkit` + `TravelAgent`
-- Pydantic object passing (runnable without API key)
+Demonstrates:
+- Use `AsyncOpenAI` client
+- Mix sync and async tools
+- Concurrent tool execution with `asyncio.gather()`
 
-#### [async_example.py](async_example.py)
+### [dynamic_prompt_example.py](dynamic_prompt_example.py) - Dynamic Prompts
 
-Async agents with mixed sync/async tools. Demonstrates `AsyncOpenAI`, `asyncio` patterns, and performance comparison of sequential vs concurrent operations.
+**No API key required.** Runtime-configurable system prompts.
 
-- `AsyncDatabaseAgent` with sync and async tools
-- Concurrent tool execution
-- Sequential vs concurrent performance comparison
-
-#### [tool_namespacing_example.py](tool_namespacing_example.py)
-
-When multiple agents define tools with the same name (e.g. both have `search`), this example shows three strategies: delegation (recommended), namespace prefixes, and a hybrid approach.
-
-#### [dynamic_prompt_example.py](dynamic_prompt_example.py)
-
-**No API key required.** Demonstrates dynamic system prompts that change between runs.
-
-- **Template substitution**: `{placeholders}` resolved from `system_context` dict
-- **Callable prompts**: Functions that generate prompts dynamically
-- **Instance method prompts**: OOP pattern for class-based agents
-- **FastAPI integration**: Per-request agent creation with user-specific context
-- **RAG context injection**: Updating prompts with retrieved documents
+Demonstrates:
+- Template substitution: `{placeholder}` + `system_context`
+- Callable prompts: functions that return prompt strings
+- Per-user personalization patterns
 
 ---
 
-### Multi-Agent Patterns
+## Multi-Agent Patterns
 
-These examples show how agents work together through delegation.
+### [multiagent_example.py](multiagent_example.py) - Delegation
 
-#### [multiagent_example.py](multiagent_example.py)
+**API key optional.** Multi-agent systems with delegation.
 
-The core delegation pattern: a coordinator agent delegates tasks to specialist agents via `register_delegate()`.
+Demonstrates:
+- Create coordinator + specialist agents
+- Use `register_delegate()` to expose agents as tools
+- Tree-shaped delegation workflows
 
-- `ManagerAgent` coordinates `ResearcherAgent` and `WriterAgent`
-- Multi-level workflows and concurrent delegation
-- Direct agent-to-agent communication
+### [tool_namespacing_example.py](tool_namespacing_example.py) - Name Conflicts
 
-#### [rag_example.py](rag_example.py)
+**No API key required.** Handle agents with same tool names.
 
-RAG (Retrieval-Augmented Generation) agent with an in-memory vector store. Uses OpenAI embeddings for semantic document search.
+Demonstrates:
+- Problem: two agents both have `search` tool
+- Solution: use delegation (recommended)
+- Each agent's tools stay encapsulated
 
-- `VectorStore` with cosine similarity
-- `RAGAgent` with `search_knowledge()` tool
-- Pre-loaded knowledge base about Fractal and Python
+### [rag_example.py](rag_example.py) - RAG
+
+**Requires API key.** Retrieval-Augmented Generation.
+
+Demonstrates:
+- In-memory vector store with cosine similarity
+- OpenAI embeddings for semantic search
+- RAG agent with `search_knowledge()` tool
 
 ---
 
-### Web / API Integration
+## Web Integration
 
-These examples show how to serve agents over HTTP with FastAPI.
+### [fastapi_example.py](fastapi_example.py) - Single Agent
 
-#### [fastapi_example.py](fastapi_example.py)
-
-Single-agent FastAPI server with agent-backed and direct tool endpoints.
+**Requires API key.** Serve one agent via FastAPI.
 
 ```bash
 pip install ".[fastapi]"
@@ -124,81 +124,67 @@ python examples/fastapi_example.py
 # Visit http://localhost:8000/docs
 ```
 
-- `DataAgent` with search and statistics tools
-- `POST /query` for agent queries, `GET /statistics` for direct tool calls
-- Interactive Swagger UI
+### [fastapi_multiagent.py](fastapi_multiagent.py) - Multi-Agent
 
-#### [fastapi_multiagent.py](fastapi_multiagent.py)
+**Requires API key.** Serve multiple agents via FastAPI.
 
-Multi-agent FastAPI server with a hub-and-spoke router pattern and lifespan management.
-
-- `RouterAgent` delegates to `ResearchAgent`, `AnalysisAgent`, `ReportAgent`
-- `POST /query` routes through the coordinator
+Demonstrates:
+- Router agent delegates to specialists
+- `POST /query` for coordinated queries
 - `POST /direct/{agent_name}` for targeted queries
-- Startup/shutdown lifecycle
 
 ---
 
-### Observability & Tracing
+## Observability
 
-These examples show how to record, export, and visualize execution traces.
+### [tracing_example.py](tracing_example.py) - Basic Tracing
 
-#### [tracing_example.py](tracing_example.py)
+**No API key required.** Enable execution tracing.
 
-Enable `TracingKit`, run an agent, export the trace to `.jsonl`, and inspect events programmatically.
+Demonstrates:
+- Enable tracing: `enable_tracing=True`
+- Get summary: `agent.tracing.get_summary()`
+- Export: `agent.tracing.export_json("trace.jsonl")`
 
-- In-memory tracing and file export
-- Trace summary statistics
-- Performance comparison (with vs without tracing)
+### [delegation_tracing_example.py](delegation_tracing_example.py) - Chain Tracing
 
-#### [delegation_tracing_example.py](delegation_tracing_example.py)
+**No API key required.** Trace entire delegation chains.
 
-Delegation-aware tracing across multi-level agent chains. Shows the "infection pattern" where the top agent's `TracingKit` propagates to all delegates automatically.
+Demonstrates:
+- Tracing "infects" delegated agents automatically
+- Track `parent_agent` and `delegation_depth`
+- Use `{run_id}` for per-run isolation
 
-- Two-level tracing: Coordinator → DataAnalyst / Researcher
-- Three-level tracing: CoordinatorA → ResearcherB → AnalystC
-- Event grouping by `delegation_depth`
-- Uses `{run_id}` placeholder for per-run trace files
+### [multi_run_demo.py](multi_run_demo.py) - Per-Run Isolation
 
-#### [multi_run_demo.py](multi_run_demo.py)
+**No API key required.** Each run() gets separate trace file.
 
-**No API key required.** Demonstrates that each `run()` creates a separate trace file with unique `run_id`. Essential for FastAPI backends where concurrent requests should not mix traces.
+Demonstrates:
+- `{run_id}` placeholder in trace file path
+- Essential for FastAPI with concurrent requests
 
-- `{run_id}` placeholder in `tracing_output_file`
-- Each run creates: `demo_{run_id}.jsonl`
-- Shows all events include `run_id` field
+### [visualization_demo.py](visualization_demo.py) - Visualization
 
-#### [visualization_demo.py](visualization_demo.py)
-
-End-to-end workflow: run agents with tracing, export to `.jsonl`, then visualize with the terminal or HTML viewer.
-
-- `OrchestratorAgent` → `CalculatorAgent` + `DataProcessorAgent`
-- Generates trace file and HTML visualization
-
----
-
-## Sample Trace Files
-
-Pre-generated traces in [traces/](traces/) let you try the visualization tools without running examples:
-
-| File | Source | Content |
-|------|--------|---------|
-| [tracing_example.jsonl](traces/tracing_example.jsonl) | tracing_example.py | Single agent with tool calls |
-| [visualization_demo.jsonl](traces/visualization_demo.jsonl) | visualization_demo.py | Multi-agent delegation |
-| [delegation_tracing.jsonl](traces/delegation_tracing.jsonl) | delegation_tracing_example.py | Two-level delegation |
-| [multi_level_delegation.jsonl](traces/multi_level_delegation.jsonl) | delegation_tracing_example.py | Three-level delegation |
-
-Try them:
+**API key optional.** End-to-end tracing workflow.
 
 ```bash
 # Terminal view
-fractal view examples/traces/visualization_demo.jsonl --flow
+fractal view examples/traces/visualization_demo.jsonl
 
-# HTML visualization
-fractal visualize examples/traces/visualization_demo.jsonl -o examples/visualizations/visualization_demo.html
+# HTML view
+fractal visualize examples/traces/visualization_demo.jsonl -o output.html
 ```
 
-Pre-generated HTML visualizations are in [visualizations/](visualizations/). Open any `.html` file in a browser for interactive exploration.
+---
+
+## Sample Traces
+
+Pre-generated traces in [traces/](traces/) for trying visualization:
+
+```bash
+fractal view examples/traces/tracing_example.jsonl
+fractal visualize examples/traces/visualization_demo.jsonl -o output.html
+```
 
 ---
 
@@ -206,19 +192,19 @@ Pre-generated HTML visualizations are in [visualizations/](visualizations/). Ope
 
 ```
 examples/
-+-- inheritance_example.py          # Start here
-+-- basic_example.py                # Standalone toolkit pattern
-+-- dynamic_prompt_example.py       # Dynamic system prompts
-+-- async_example.py                # Async tools and concurrency
-+-- tool_namespacing_example.py     # Overlapping tool names
-+-- multiagent_example.py           # Multi-agent delegation
-+-- rag_example.py                  # RAG with vector search
-+-- fastapi_example.py              # Single-agent HTTP server
-+-- fastapi_multiagent.py           # Multi-agent HTTP server
-+-- tracing_example.py              # Execution tracing
-+-- delegation_tracing_example.py   # Delegation-aware tracing
-+-- multi_run_demo.py               # Per-run trace isolation
-+-- visualization_demo.py           # Trace visualization workflow
-+-- traces/                         # Sample .jsonl trace outputs
-+-- visualizations/                 # Sample .html visualizations
+├── inheritance_example.py      # Agent inheritance pattern (START HERE)
+├── basic_example.py            # Standalone toolkit pattern
+├── async_example.py            # Async tools
+├── dynamic_prompt_example.py   # Dynamic system prompts
+├── multiagent_example.py       # Multi-agent delegation
+├── tool_namespacing_example.py # Handling name conflicts
+├── rag_example.py              # RAG with vector search
+├── fastapi_example.py          # Single-agent HTTP
+├── fastapi_multiagent.py       # Multi-agent HTTP
+├── tracing_example.py          # Basic tracing
+├── delegation_tracing_example.py # Delegation chain tracing
+├── multi_run_demo.py           # Per-run trace isolation
+├── visualization_demo.py       # Trace visualization
+├── traces/                     # Sample .jsonl traces
+└── visualizations/             # Sample .html visualizations
 ```
