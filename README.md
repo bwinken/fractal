@@ -75,13 +75,13 @@ Write a Python function with a Google-style docstring and Fractal automatically 
 ## Installation
 
 ```bash
-pip install -e .
+pip install .
 ```
 
 With FastAPI support:
 
 ```bash
-pip install -e ".[fastapi]"
+pip install ".[fastapi]"
 ```
 
 **Requirements:** Python >= 3.9, openai >= 1.0.0, pydantic >= 2.0.0, python-dotenv >= 1.0.0
@@ -611,7 +611,7 @@ Choose the right example for your use case:
 python examples/inheritance_example.py
 
 # FastAPI examples
-pip install -e ".[fastapi]"
+pip install ".[fastapi]"
 python examples/fastapi_example.py
 # Visit http://localhost:8000/docs
 ```

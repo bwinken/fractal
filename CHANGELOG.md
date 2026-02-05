@@ -91,7 +91,7 @@ fractal view trace.jsonl
 fractal visualize trace.jsonl -o output.html
 ```
 
-Both invocation methods work. Install with `pip install -e .` to enable the `fractal` command.
+Both invocation methods work. Install with `pip install .` to enable the `fractal` command.
 
 ---
 

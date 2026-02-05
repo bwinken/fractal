@@ -28,7 +28,7 @@ Working examples for the Fractal framework.
 
 ```bash
 # Install the package
-pip install -e .
+pip install .
 
 # Configure API key
 cp .env.example .env
@@ -119,7 +119,7 @@ These examples show how to serve agents over HTTP with FastAPI.
 Single-agent FastAPI server with agent-backed and direct tool endpoints.
 
 ```bash
-pip install -e ".[fastapi]"
+pip install ".[fastapi]"
 python examples/fastapi_example.py
 # Visit http://localhost:8000/docs
 ```
