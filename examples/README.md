@@ -10,6 +10,7 @@ Working examples for the Fractal framework.
 |--------------|-----------|----------|
 | **Get started quickly** | [inheritance_example.py](inheritance_example.py) | **No** |
 | Build an agent without subclassing | [basic_example.py](basic_example.py) | Partial |
+| Use dynamic system prompts | [dynamic_prompt_example.py](dynamic_prompt_example.py) | **No** |
 | Use async tools or run tools concurrently | [async_example.py](async_example.py) | Yes |
 | Have one agent delegate to another | [multiagent_example.py](multiagent_example.py) | Yes |
 | Handle agents with the same tool names | [tool_namespacing_example.py](tool_namespacing_example.py) | Yes |
@@ -74,6 +75,16 @@ Async agents with mixed sync/async tools. Demonstrates `AsyncOpenAI`, `asyncio` 
 #### [tool_namespacing_example.py](tool_namespacing_example.py)
 
 When multiple agents define tools with the same name (e.g. both have `search`), this example shows three strategies: delegation (recommended), namespace prefixes, and a hybrid approach.
+
+#### [dynamic_prompt_example.py](dynamic_prompt_example.py)
+
+**No API key required.** Demonstrates dynamic system prompts that change between runs.
+
+- **Template substitution**: `{placeholders}` resolved from `system_context` dict
+- **Callable prompts**: Functions that generate prompts dynamically
+- **Instance method prompts**: OOP pattern for class-based agents
+- **FastAPI integration**: Per-request agent creation with user-specific context
+- **RAG context injection**: Updating prompts with retrieved documents
 
 ---
 
@@ -197,6 +208,7 @@ Pre-generated HTML visualizations are in [visualizations/](visualizations/). Ope
 examples/
 +-- inheritance_example.py          # Start here
 +-- basic_example.py                # Standalone toolkit pattern
++-- dynamic_prompt_example.py       # Dynamic system prompts
 +-- async_example.py                # Async tools and concurrency
 +-- tool_namespacing_example.py     # Overlapping tool names
 +-- multiagent_example.py           # Multi-agent delegation

@@ -2,6 +2,99 @@
 
 ## [Unreleased]
 
+### Added - Dynamic System Prompts
+
+**New Feature: Runtime-Configurable System Prompts**
+
+System prompts can now be dynamically generated at runtime using templates or callables.
+
+**Features**:
+- **Template substitution**: Use `{placeholder}` syntax with `system_context` dict
+- **Callable prompts**: Pass a function/lambda that returns the prompt string
+- **Runtime updates**: Use `update_system_context()` to modify template values
+- **Per-request personalization**: Ideal for FastAPI backends with user-specific prompts
+
+**Usage**:
+```python
+# Template-based
+agent = BaseAgent(
+    name="Support",
+    system_prompt="You help {user_name} ({plan} plan). Be {tone}.",
+    system_context={"user_name": "Alice", "plan": "pro", "tone": "friendly"}
+)
+# → "You help Alice (pro plan). Be friendly."
+
+# Update at runtime
+agent.update_system_context(user_name="Bob", tone="formal")
+
+# Callable-based (full dynamic control)
+state = {"mode": "debug"}
+agent = BaseAgent(
+    name="Debug",
+    system_prompt=lambda: f"Mode: {state['mode']}"
+)
+```
+
+**Use Cases**:
+- Per-user personalization in web backends
+- RAG context injection before each query
+- Multi-tenant SaaS with tenant-specific prompts
+- A/B testing different prompt variants
+
+See [examples/dynamic_prompt_example.py](examples/dynamic_prompt_example.py) for complete examples.
+
+---
+
+### Added - Per-Run Trace Isolation
+
+**New Feature: `{run_id}` Placeholder for Trace Files**
+
+Each `run()` call now generates a unique `run_id`, enabling separate trace files per execution.
+
+**Features**:
+- `{run_id}` placeholder in `tracing_output_file` creates unique files
+- `{timestamp}` placeholder also supported
+- Events cleared between runs (no cross-contamination)
+- Essential for FastAPI backends with concurrent requests
+
+**Usage**:
+```python
+agent = BaseAgent(
+    name="Agent",
+    enable_tracing=True,
+    tracing_output_file="traces/run_{run_id}.jsonl"  # Each run() creates new file
+)
+
+# Run 1 → traces/run_a1b2c3d4.jsonl
+# Run 2 → traces/run_e5f6g7h8.jsonl
+```
+
+See [examples/multi_run_demo.py](examples/multi_run_demo.py) for demonstration.
+
+---
+
+### Added - `fractal` CLI Command
+
+**New Feature: Short CLI Command**
+
+Added `fractal` as a console script entry point for easier trace visualization.
+
+**Before**:
+```bash
+python -m fractal.observability view trace.jsonl
+python -m fractal.observability visualize trace.jsonl
+```
+
+**After** (recommended):
+```bash
+fractal view trace.jsonl
+fractal visualize trace.jsonl -o output.html
+```
+
+Both invocation methods work. Install with `pip install -e .` to enable the `fractal` command.
+
+---
+
 ### Refactored - Code Organization
 
 **Code Structure Refactoring**

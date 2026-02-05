@@ -3,7 +3,7 @@ Base Agent implementation with OpenAI integration.
 """
 import json
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 from openai import OpenAI, AsyncOpenAI
 from pydantic import BaseModel
 
@@ -43,21 +43,24 @@ class BaseAgent:
     def __init__(
         self,
         name: str,
-        system_prompt: str,
+        system_prompt: Union[str, Callable[[], str]],
         model: Optional[str] = None,
         client: Optional[Union[OpenAI, AsyncOpenAI]] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         enable_tracing: bool = False,
         tracing_output_file: Optional[str] = None,
-        context_window: Optional[int] = None
+        context_window: Optional[int] = None,
+        system_context: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize the Base Agent.
 
         Args:
             name (str): Name of the agent
-            system_prompt (str): System prompt that defines the agent's behavior
+            system_prompt (Union[str, Callable[[], str]]): System prompt that defines the agent's behavior.
+                Can be a static string, a template string with ``{placeholders}``, or a callable
+                that returns the prompt dynamically. Templates are resolved using ``system_context``.
             model (str): OpenAI model to use (falls back to OPENAI_MODEL env var, then "gpt-4o-mini")
             client (Union[OpenAI, AsyncOpenAI]): OpenAI client instance (sync or async, if None creates AsyncOpenAI).
                 When omitted, AsyncOpenAI() is created automatically, which reads OPENAI_API_KEY
@@ -73,9 +76,13 @@ class BaseAgent:
             context_window (int): Maximum token budget for API calls (falls back to CONTEXT_WINDOW env var).
                 When set, automatically trims old conversation history to fit within the limit.
                 The full history is preserved in self.messages; only the API call receives a trimmed view.
+            system_context (dict): Context variables for template substitution in system_prompt.
+                Use ``{key}`` placeholders in the prompt and provide values here. Can be updated
+                later with ``update_system_context()``.
         """
         self.name = name
-        self.system_prompt = system_prompt
+        self._system_prompt_source = system_prompt  # Store original (str or Callable)
+        self.system_context: Dict[str, Any] = system_context or {}
         self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -94,10 +101,54 @@ class BaseAgent:
         # Use provided client or create default async one
         self.client = client if client is not None else AsyncOpenAI()
 
-        # Conversation history
+        # Conversation history (use resolved system_prompt)
         self.messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": system_prompt}
+            {"role": "system", "content": self.system_prompt}
         ]
+
+    @property
+    def system_prompt(self) -> str:
+        """
+        Get the resolved system prompt.
+
+        If ``_system_prompt_source`` is a callable, it is invoked to get the current prompt.
+        If it's a string with ``{placeholders}``, they are substituted using ``system_context``.
+        Otherwise, the string is returned as-is.
+
+        Returns:
+            The resolved system prompt string.
+        """
+        if callable(self._system_prompt_source):
+            return self._system_prompt_source()
+        elif self.system_context:
+            try:
+                return self._system_prompt_source.format(**self.system_context)
+            except KeyError:
+                # If placeholders don't match context, return as-is
+                return self._system_prompt_source
+        return self._system_prompt_source
+
+    def update_system_context(self, **kwargs) -> None:
+        """
+        Update the system context for template substitution.
+
+        New values are merged into the existing context. Use this to change
+        dynamic parts of the system prompt before the next ``run()`` call.
+
+        Args:
+            **kwargs: Key-value pairs to merge into the system context.
+
+        Example::
+
+            agent = BaseAgent(
+                name="Assistant",
+                system_prompt="Helping {user_name}. Preference: {pref}",
+                system_context={"user_name": "Alice", "pref": "concise"}
+            )
+            agent.update_system_context(user_name="Bob")
+            # Next run() will use "Helping Bob. Preference: concise"
+        """
+        self.system_context.update(kwargs)
 
     async def run(
         self,
@@ -116,6 +167,9 @@ class BaseAgent:
         Returns:
             AgentResult containing the agent's final response
         """
+        # Refresh system prompt (handles dynamic prompts via Callable or template)
+        self.messages[0]["content"] = self.system_prompt
+
         # Convert input to string if necessary
         if isinstance(user_input, str):
             content = user_input

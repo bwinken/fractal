@@ -64,6 +64,7 @@ Write a Python function with a Google-style docstring and Fractal automatically 
 | **LLM** | OpenAI API + any compatible endpoint (Azure, Ollama, LM Studio) |
 | **Async** | Native `async`/`await`; mixed sync and async tools |
 | **Tools** | Decorator-based (`@tool`) or functional (`add_tool()`) registration |
+| **Dynamic Prompts** | Template placeholders or callables for per-request system prompts |
 | **I/O** | `str`, `dict`, `list`, or Pydantic `BaseModel` between agents and tools |
 | **Observability** | Delegation-aware tracing → JSON Lines → terminal ASCII or interactive HTML |
 | **FastAPI** | Drop agents into endpoints with lifespan management |
@@ -291,7 +292,8 @@ The main agent class. Handles OpenAI API communication, tool execution loop, and
 ```python
 agent = BaseAgent(
     name="MyAgent",                    # Agent name (used in tracing)
-    system_prompt="You are helpful.",   # System prompt
+    system_prompt="You are helpful.",   # System prompt (str or Callable[[], str])
+    system_context=None,               # Dict for template placeholders (e.g., {"user": "Alice"})
     model="gpt-4o-mini",               # Falls back to OPENAI_MODEL env var, then "gpt-4o-mini"
     client=AsyncOpenAI(),              # Falls back to OPENAI_API_KEY / OPENAI_BASE_URL env vars
     temperature=0.7,                   # Sampling temperature (0-2)
@@ -302,12 +304,38 @@ agent = BaseAgent(
 )
 ```
 
+**Dynamic System Prompts:**
+
+The `system_prompt` parameter accepts either a static string or a callable (function/lambda) that returns a string. When using templates with `{placeholders}`, provide a `system_context` dict for substitution:
+
+```python
+# Template-based: placeholders resolved from system_context
+agent = BaseAgent(
+    name="Support",
+    system_prompt="You help {user_name} ({plan} plan). Be {tone}.",
+    system_context={"user_name": "Alice", "plan": "pro", "tone": "friendly"}
+)
+# → "You help Alice (pro plan). Be friendly."
+
+# Update context at runtime
+agent.update_system_context(user_name="Bob", tone="formal")
+
+# Callable-based: full dynamic control
+external_state = {"mode": "debug"}
+agent = BaseAgent(
+    name="Debug",
+    system_prompt=lambda: f"Mode: {external_state['mode']}"
+)
+# Prompt recomputed on each run() call
+```
+
 **Methods:**
 
 | Method | Description |
 |--------|-------------|
 | `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
 | `reset()` | Clear conversation history |
+| `update_system_context(**kwargs)` | Merge new values into `system_context` (for template prompts) |
 | `add_tool(func, name=None, terminate=False)` | Register a standalone function as a tool |
 | `register_delegate(agent, tool_name=None, description=None, parameters=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |
@@ -552,6 +580,7 @@ Choose the right example for your use case:
 |---------------------|---------|----------|
 | Build agents with class inheritance | [inheritance_example.py](examples/inheritance_example.py) | No |
 | Use standalone toolkit without subclassing | [basic_example.py](examples/basic_example.py) | Yes |
+| Use dynamic system prompts (templates, callables) | [dynamic_prompt_example.py](examples/dynamic_prompt_example.py) | **No** |
 | Mix sync and async tools, concurrent execution | [async_example.py](examples/async_example.py) | Yes |
 
 ### Multi-Agent Patterns
