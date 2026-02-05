@@ -18,6 +18,7 @@ Working examples for the Fractal framework.
 | Serve multiple agents behind a router | [fastapi_multiagent.py](fastapi_multiagent.py) | Yes |
 | Record and inspect execution traces | [tracing_example.py](tracing_example.py) | Yes |
 | Trace across a delegation chain | [delegation_tracing_example.py](delegation_tracing_example.py) | Yes |
+| See per-run trace isolation (`{run_id}`) | [multi_run_demo.py](multi_run_demo.py) | **No** |
 | See the full trace-to-visualization workflow | [visualization_demo.py](visualization_demo.py) | Yes |
 
 ---
@@ -146,6 +147,15 @@ Delegation-aware tracing across multi-level agent chains. Shows the "infection p
 - Two-level tracing: Coordinator → DataAnalyst / Researcher
 - Three-level tracing: CoordinatorA → ResearcherB → AnalystC
 - Event grouping by `delegation_depth`
+- Uses `{run_id}` placeholder for per-run trace files
+
+#### [multi_run_demo.py](multi_run_demo.py)
+
+**No API key required.** Demonstrates that each `run()` creates a separate trace file with unique `run_id`. Essential for FastAPI backends where concurrent requests should not mix traces.
+
+- `{run_id}` placeholder in `tracing_output_file`
+- Each run creates: `demo_{run_id}.jsonl`
+- Shows all events include `run_id` field
 
 #### [visualization_demo.py](visualization_demo.py)
 
@@ -195,6 +205,7 @@ examples/
 +-- fastapi_multiagent.py           # Multi-agent HTTP server
 +-- tracing_example.py              # Execution tracing
 +-- delegation_tracing_example.py   # Delegation-aware tracing
++-- multi_run_demo.py               # Per-run trace isolation
 +-- visualization_demo.py           # Trace visualization workflow
 +-- traces/                         # Sample .jsonl trace outputs
 +-- visualizations/                 # Sample .html visualizations

@@ -3,6 +3,7 @@ Tracing and observability toolkit for monitoring agent execution.
 """
 import time
 import json
+import uuid
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
@@ -17,6 +18,7 @@ class TraceEvent:
         timestamp: Unix timestamp when the event occurred
         event_type: Type of event (agent_start, agent_end, agent_delegate, tool_call, tool_result, error)
         agent_name: Name of the agent
+        run_id: Unique identifier for this run (groups events from one run() call)
         parent_agent: Name of the parent agent (for delegated agents)
         delegation_depth: Depth in the delegation chain (0 = top agent)
         tool_name: Name of the tool (for tool-related events)
@@ -29,6 +31,7 @@ class TraceEvent:
     timestamp: float
     event_type: str
     agent_name: str
+    run_id: Optional[str] = None
     parent_agent: Optional[str] = None
     delegation_depth: int = 0
     tool_name: Optional[str] = None
@@ -81,27 +84,83 @@ class TracingKit:
         agent.tracing.export_json("trace.jsonl")
     """
 
-    def __init__(self, output_file: Optional[str] = None, auto_export: bool = False):
+    def __init__(self, output_file: Optional[str] = None, auto_export: bool = True):
         """
         Initialize the tracing toolkit.
 
         Args:
-            output_file: Optional file path to automatically export events (JSON Lines format)
-            auto_export: If True, export each event immediately to file
+            output_file: Optional file path pattern for trace output. Supports placeholders:
+                - ``{run_id}`` — unique ID for this run (e.g., ``trace_{run_id}.jsonl``)
+                - ``{timestamp}`` — ISO timestamp (e.g., ``trace_{timestamp}.jsonl``)
+                If the pattern contains ``{run_id}`` or ``{timestamp}``, a new file is
+                created for each ``run()`` call. Otherwise, all runs append to the same file.
+            auto_export: If True (default), export each event immediately to file.
         """
         self.events: List[TraceEvent] = []
-        self.output_file = output_file
+        self.output_file_pattern = output_file
+        self.output_file: Optional[str] = None  # Resolved path for current run
         self.auto_export = auto_export
         self._operation_stack: List[Dict[str, Any]] = []  # Stack for tracking nested operations
         self._delegation_depth: int = 0  # Track delegation depth
         self._current_parent: Optional[str] = None  # Track current parent agent
+        self._run_id: Optional[str] = None  # Current run ID
 
     def _add_event(self, event: TraceEvent):
         """Add an event and optionally export it."""
+        # Attach current run_id to event
+        event.run_id = self._run_id
         self.events.append(event)
 
         if self.auto_export and self.output_file:
             self._export_event(event)
+
+    def start_run(self, run_id: Optional[str] = None) -> str:
+        """
+        Start a new trace run. Call this before ``start_agent()``.
+
+        Clears previous events, generates a new run_id, and resolves the output file path.
+
+        Args:
+            run_id: Optional custom run ID. If None, a UUID is generated.
+
+        Returns:
+            The run_id for this run.
+        """
+        # Clear state from previous run
+        self.events.clear()
+        self._operation_stack.clear()
+        self._delegation_depth = 0
+        self._current_parent = None
+
+        # Generate or use provided run_id
+        self._run_id = run_id or uuid.uuid4().hex[:12]
+
+        # Resolve output file path from pattern
+        if self.output_file_pattern:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.output_file = (
+                self.output_file_pattern
+                .replace("{run_id}", self._run_id)
+                .replace("{timestamp}", ts)
+            )
+        else:
+            self.output_file = None
+
+        return self._run_id
+
+    def end_run(self):
+        """
+        End the current trace run.
+
+        Finalizes the trace. The events remain available via ``get_trace()`` until
+        the next ``start_run()`` call.
+        """
+        self._run_id = None
+
+    @property
+    def run_id(self) -> Optional[str]:
+        """Current run ID, or None if no run is active."""
+        return self._run_id
 
     def _export_event(self, event: TraceEvent):
         """Export a single event to file (JSON Lines format)."""

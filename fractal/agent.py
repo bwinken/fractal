@@ -65,7 +65,11 @@ class BaseAgent:
             temperature (float): Sampling temperature (0-2)
             max_tokens (int): Maximum tokens in response
             enable_tracing (bool): Enable execution tracing for observability
-            tracing_output_file (str): Optional file path to export trace events (JSON Lines format)
+            tracing_output_file (str): Optional file path pattern for trace output. Supports placeholders:
+                ``{run_id}`` — unique ID for this run (e.g., ``trace_{run_id}.jsonl``)
+                ``{timestamp}`` — ISO timestamp (e.g., ``trace_{timestamp}.jsonl``)
+                When a pattern contains placeholders, each ``run()`` creates a new file.
+                Without placeholders, all runs append to the same file.
             context_window (int): Maximum token budget for API calls (falls back to CONTEXT_WINDOW env var).
                 When set, automatically trims old conversation history to fit within the limit.
                 The full history is preserved in self.messages; only the API call receives a trimmed view.
@@ -128,7 +132,13 @@ class BaseAgent:
         self.messages.append({"role": "user", "content": content})
 
         # Start tracing
+        # Only start a new run if no run is active (i.e., this is the top-level agent).
+        # Delegated agents inherit the parent's TracingKit with an active run_id,
+        # so they should NOT call start_run() which would clear the parent's events.
         if self.tracing:
+            if self.tracing.run_id is None:
+                # Top-level agent: start a new run (clears previous events, generates run_id)
+                self.tracing.start_run()
             self.tracing.start_agent(self.name, content, metadata={'model': self.model})
 
         iteration = 0
@@ -182,6 +192,7 @@ class BaseAgent:
                             # End tracing
                             if self.tracing:
                                 self.tracing.end_agent(self.name, result.content, success=False, metadata={'reason': 'refusal'})
+                                self.tracing.end_run()
                             return result
 
                         # Otherwise, this is likely a reasoning-only response - retry
@@ -206,6 +217,7 @@ class BaseAgent:
                             # End tracing
                             if self.tracing:
                                 self.tracing.end_agent(self.name, result.content, success=False, metadata={'reason': 'no_content_after_retries'})
+                                self.tracing.end_run()
                             return result
 
                     # Check for empty content when no tool calls
@@ -234,6 +246,7 @@ class BaseAgent:
                         if self.tracing:
                             self.tracing.record_error(self.name, last_error, metadata={'error_type': 'json_decode_error'})
                             self.tracing.end_agent(self.name, result.content, success=False, metadata={'error_type': 'json_decode_error'})
+                            self.tracing.end_run()
                         return result
                     # Wait before retry
                     import asyncio
@@ -267,6 +280,7 @@ class BaseAgent:
                             if self.tracing:
                                 self.tracing.record_error(self.name, error_str, metadata={'error_type': 'rate_limit'})
                                 self.tracing.end_agent(self.name, result.content, success=False, metadata={'error_type': 'rate_limit'})
+                                self.tracing.end_run()
                             return result
 
                     # Check if it's a timeout error
@@ -291,6 +305,7 @@ class BaseAgent:
                             if self.tracing:
                                 self.tracing.record_error(self.name, error_str, metadata={'error_type': 'timeout'})
                                 self.tracing.end_agent(self.name, result.content, success=False, metadata={'error_type': 'timeout'})
+                                self.tracing.end_run()
                             return result
 
                     # Other errors - fail immediately
@@ -308,6 +323,7 @@ class BaseAgent:
                     if self.tracing:
                         self.tracing.record_error(self.name, error_str, metadata={'error_type': 'api_error'})
                         self.tracing.end_agent(self.name, result.content, success=False, metadata={'error_type': 'api_error'})
+                        self.tracing.end_run()
                     return result
 
             # After retry loop - continue with normal processing
@@ -385,6 +401,7 @@ class BaseAgent:
                             # End tracing
                             if self.tracing:
                                 self.tracing.end_agent(self.name, result.content, success=True, metadata={'terminated_by_tool': function_name})
+                                self.tracing.end_run()
                             return result
 
                         # Prepare tool response
@@ -435,6 +452,7 @@ class BaseAgent:
                 # End tracing
                 if self.tracing:
                     self.tracing.end_agent(self.name, result.content, success=True, metadata={'iterations': iteration})
+                    self.tracing.end_run()
 
                 return result
 
@@ -454,6 +472,7 @@ class BaseAgent:
                 if self.tracing:
                     self.tracing.record_error(self.name, str(e), metadata={'error_type': 'unexpected_error'})
                     self.tracing.end_agent(self.name, result.content, success=False, metadata={'error_type': 'unexpected_error'})
+                    self.tracing.end_run()
                 return result
 
         # Max iterations reached
@@ -469,6 +488,7 @@ class BaseAgent:
         # End tracing
         if self.tracing:
             self.tracing.end_agent(self.name, result.content, success=False, metadata={'reason': 'max_iterations_reached'})
+            self.tracing.end_run()
         return result
 
     def __str__(self) -> str:

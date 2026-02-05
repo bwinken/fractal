@@ -8,6 +8,7 @@ Key features:
 - Tracks parent_agent and delegation_depth for each event
 - Records delegation start/end events
 - Works seamlessly with multi-level delegation (A -> B -> C)
+- Uses {run_id} placeholder for per-run trace files (FastAPI-safe)
 
 To run:
     python examples/delegation_tracing_example.py
@@ -101,13 +102,15 @@ class ResearchAgent(BaseAgent):
 class CoordinatorAgent(BaseAgent):
     """A coordinator agent that delegates to specialists."""
 
-    def __init__(self, analyst: DataAnalystAgent, researcher: ResearchAgent):
+    def __init__(self, analyst: DataAnalystAgent, researcher: ResearchAgent, output_dir: str = "examples/traces"):
         super().__init__(
             name="Coordinator",
             system_prompt="You coordinate tasks by delegating to specialist agents.",
             model="gpt-4o-mini",
             client=AsyncOpenAI(),
-            enable_tracing=True  # Only enable tracing at the top level
+            enable_tracing=True,  # Only enable tracing at the top level
+            # Each run() creates a separate file with unique run_id
+            tracing_output_file=f"{output_dir}/delegation_{{run_id}}.jsonl"
         )
 
         # Register specialists as delegates
@@ -140,6 +143,7 @@ async def example_basic_delegation_tracing():
 
     print(f"\n[Setup]")
     print(f"  Coordinator tracing: {coordinator.tracing is not None}")
+    print(f"  Output file pattern: {coordinator.tracing.output_file_pattern}")
     print(f"  Analyst tracing: {analyst.tracing is not None}")
     print(f"  Researcher tracing: {researcher.tracing is not None}")
 
@@ -196,10 +200,8 @@ async def example_basic_delegation_tracing():
                 success = "[OK]" if event.metadata.get('success') else "[ERROR]"
                 print(f"  Return: {to_agent} -> {event.agent_name} {success}")
 
-        # Export trace
-        output_file = "examples/traces/delegation_tracing.jsonl"
-        coordinator.tracing.export_json(output_file)
-        print(f"\n[OK] Trace exported to: {output_file}")
+        # Show auto-exported file path (uses {run_id} pattern)
+        print(f"\n[OK] Trace auto-exported to: {coordinator.tracing.output_file}")
 
     print("\n" + "=" * 70)
 
@@ -251,10 +253,8 @@ async def example_multi_level_delegation():
         max_depth = max(e.delegation_depth for e in events)
         print(f"\n[OK] Maximum delegation depth: {max_depth}")
 
-        # Export
-        output_file = "examples/traces/multi_level_delegation.jsonl"
-        coordinator_a.tracing.export_json(output_file)
-        print(f"[OK] Trace exported to: {output_file}")
+        # Show auto-exported file path
+        print(f"[OK] Trace auto-exported to: {coordinator_a.tracing.output_file}")
 
     print("\n" + "=" * 70)
 

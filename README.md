@@ -261,16 +261,23 @@ class TracedCoordinator(BaseAgent):
             system_prompt="...",
             client=AsyncOpenAI(),
             enable_tracing=True,
-            tracing_output_file="trace.jsonl"
+            # Each run() creates a separate file: trace_a1b2c3d4.jsonl
+            tracing_output_file="trace_{run_id}.jsonl"
         )
 ```
+
+The `tracing_output_file` supports placeholders:
+- `{run_id}` — unique ID for this run (12-char hex)
+- `{timestamp}` — ISO timestamp (`20240115_143022`)
+
+Each `run()` call creates a separate trace file, so concurrent requests in a FastAPI backend won't mix traces.
 
 View traces:
 
 ```bash
-fractal view trace.jsonl              # Terminal ASCII view
-fractal view trace.jsonl --summary    # Summary statistics
-fractal visualize trace.jsonl -o out.html   # Interactive HTML
+fractal view trace_a1b2c3d4.jsonl              # Terminal ASCII view
+fractal view trace_a1b2c3d4.jsonl --summary    # Summary statistics
+fractal visualize trace_a1b2c3d4.jsonl -o out.html   # Interactive HTML
 ```
 
 ---
@@ -423,21 +430,28 @@ Returned by `agent.execute_tool()`.
 
 Execution tracing with delegation awareness. When the top-level agent has tracing enabled, the `TracingKit` instance automatically propagates to all delegated agents ("infection pattern"), recording `parent_agent` and `delegation_depth` for each event.
 
+Each `run()` call starts a new trace session with a unique `run_id`. Events from previous runs are cleared, and a new output file is created (when using `{run_id}` or `{timestamp}` placeholders).
+
 ```python
 from fractal import TracingKit, TraceEvent
 
-kit = TracingKit(output_file="trace.jsonl")
+kit = TracingKit(output_file="trace_{run_id}.jsonl")
+
+# Start a new run (clears previous events, generates run_id)
+run_id = kit.start_run()
+
 kit.start_agent("MyAgent", user_input="hello")
 kit.start_tool_call("MyAgent", "my_tool", {"query": "test"})
 kit.end_tool_call("MyAgent", "my_tool", result="done")
 kit.end_agent("MyAgent", result="completed")
 
+kit.end_run()
+
 events: list[TraceEvent] = kit.get_trace()
 summary: dict = kit.get_summary()
-kit.export_json("trace.jsonl")
 ```
 
-**TraceEvent fields:** `timestamp`, `event_type`, `agent_name`, `parent_agent`, `delegation_depth`, `tool_name`, `arguments`, `result`, `error`, `elapsed_time`, `metadata`
+**TraceEvent fields:** `timestamp`, `event_type`, `agent_name`, `run_id`, `parent_agent`, `delegation_depth`, `tool_name`, `arguments`, `result`, `error`, `elapsed_time`, `metadata`
 
 **Event types:** `agent_start`, `agent_end`, `agent_delegate`, `delegation_end`, `tool_call`, `tool_result`, `error`
 
