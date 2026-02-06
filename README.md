@@ -298,6 +298,7 @@ agent = BaseAgent(
     client=AsyncOpenAI(),              # Falls back to OPENAI_API_KEY / OPENAI_BASE_URL env vars
     temperature=0.7,                   # Sampling temperature (0-2)
     max_tokens=None,                   # Max response tokens
+    reasoning_effort=None,             # For reasoning models: "low", "medium", "high"
     enable_tracing=False,              # Enable execution tracing
     tracing_output_file=None,          # Auto-export trace to this file
     context_window=None                # Token limit for auto-trimming (e.g., 128000)
@@ -387,6 +388,8 @@ Tool parameters are converted to [OpenAI tool schemas](https://platform.openai.c
 | `bool` | `boolean` | |
 | `list` | `array` | No `items` schema — LLM won't know the element type |
 | `dict` | `object` | No `properties` schema — LLM won't know the key/value types |
+| `Literal["a", "b"]` | `string` + `enum` | Restricts values to specified options (like an enum) |
+| `Literal[1, 2, 3]` | `integer` + `enum` | Works with int/float/bool literals too |
 
 **Raises `TypeError` (blocks registration):**
 - `tuple`, `set`, `bytes`, `datetime` — no JSON Schema equivalent
@@ -425,9 +428,27 @@ agent.add_tool(mismatch_tool)
 #   The docstring type will be used in the tool schema.
 ```
 
+**Literal types (enum-like constraints):**
+
+```python
+from typing import Literal
+
+@tool
+def set_mode(mode: Literal["fast", "balanced", "accurate"]) -> str:
+    """Set processing mode.
+
+    Args:
+        mode (str): Processing mode
+    """
+    return f"Mode: {mode}"
+
+# Schema includes: {"type": "string", "enum": ["fast", "balanced", "accurate"]}
+```
+
 **Other constraints:**
 - Type information comes from the **docstring `Args:` section**, not from Python annotations. Annotations are used for validation only.
 - `Optional[str]` is fine — unwraps to `str`. `Union[str, int]` is not well supported.
+- `Literal` types add `enum` constraint — LLM will only use the specified values.
 - Default values make a parameter optional (omitted from `required`), but the default value itself is **not** included in the schema.
 - A parameter missing from `Args:` receives an empty description.
 - A function with no docstring uses the function name as the tool description.
@@ -438,7 +459,7 @@ Returned by `agent.run()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `content` | `str \| dict \| list \| BaseModel` | Agent response |
+| `content` | `str \| dict \| list \| List[BaseModel] \| BaseModel` | Agent response |
 | `agent_name` | `str` | Name of the agent |
 | `metadata` | `dict \| None` | Additional metadata |
 | `success` | `bool` | Whether execution succeeded |
@@ -449,7 +470,7 @@ Returned by `agent.execute_tool()`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `content` | `str \| dict \| list \| BaseModel` | Tool output |
+| `content` | `str \| dict \| list \| List[BaseModel] \| BaseModel` | Tool output |
 | `tool_name` | `str` | Name of the tool |
 | `metadata` | `dict \| None` | Execution metadata |
 | `error` | `str \| None` | Error message if failed |
@@ -579,7 +600,7 @@ Choose the right example for your use case:
 | What you want to do | Example | API Key? |
 |---------------------|---------|----------|
 | Build agents with class inheritance | [inheritance_example.py](examples/inheritance_example.py) | No |
-| Use standalone toolkit without subclassing | [basic_example.py](examples/basic_example.py) | Yes |
+| Use functional `add_tool()` pattern | [basic_example.py](examples/basic_example.py) | No |
 | Use dynamic system prompts (templates, callables) | [dynamic_prompt_example.py](examples/dynamic_prompt_example.py) | **No** |
 | Mix sync and async tools, concurrent execution | [async_example.py](examples/async_example.py) | Yes |
 

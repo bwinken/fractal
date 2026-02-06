@@ -9,7 +9,7 @@ Working examples for the Fractal framework. Each example focuses on ONE concept 
 | I want to... | Example | API Key? |
 |--------------|---------|----------|
 | **Get started quickly** | [inheritance_example.py](inheritance_example.py) | **No** |
-| Use standalone toolkit pattern | [basic_example.py](basic_example.py) | No |
+| Use functional tool pattern (`add_tool`) | [basic_example.py](basic_example.py) | No |
 | Use dynamic system prompts | [dynamic_prompt_example.py](dynamic_prompt_example.py) | **No** |
 | Use async tools | [async_example.py](async_example.py) | No |
 | Have agents delegate to each other | [multiagent_example.py](multiagent_example.py) | Optional |
@@ -52,14 +52,14 @@ Demonstrates:
 - Access instance state in tools
 - Inspect tool schemas without LLM
 
-### [basic_example.py](basic_example.py) - Standalone Toolkit
+### [basic_example.py](basic_example.py) - Functional Tool Pattern
 
-**No API key required.** Alternative pattern separating tools from agents.
+**No API key required.** Alternative pattern using standalone functions.
 
 Demonstrates:
-- Create standalone `AgentToolkit` subclass
-- Attach toolkit to `BaseAgent` via `toolkit=` parameter
-- Reuse toolkits across multiple agents
+- Use `@tool` decorator on standalone functions
+- Register tools with `agent.add_tool(func)`
+- Use `terminate=True` for tools that end the agent loop
 
 ### [async_example.py](async_example.py) - Async Tools
 

@@ -4,7 +4,7 @@ Base Agent implementation with OpenAI integration.
 import asyncio
 import json
 import os
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 from openai import OpenAI, AsyncOpenAI
 from pydantic import BaseModel
 
@@ -49,6 +49,7 @@ class BaseAgent:
         client: Optional[Union[OpenAI, AsyncOpenAI]] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        reasoning_effort: Optional[Literal["low", "medium", "high"]] = None,
         enable_tracing: bool = False,
         tracing_output_file: Optional[str] = None,
         context_window: Optional[int] = None,
@@ -68,6 +69,8 @@ class BaseAgent:
                 and OPENAI_BASE_URL from environment variables.
             temperature (float): Sampling temperature (0-2)
             max_tokens (int): Maximum tokens in response
+            reasoning_effort (str): Reasoning effort for OpenAI reasoning models (o1, o3, etc.).
+                Valid values: ``"low"``, ``"medium"``, ``"high"``. Only used when model supports it.
             enable_tracing (bool): Enable execution tracing for observability
             tracing_output_file (str): Optional file path pattern for trace output. Supports placeholders:
                 ``{run_id}`` — unique ID for this run (e.g., ``trace_{run_id}.jsonl``)
@@ -87,6 +90,7 @@ class BaseAgent:
         self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
 
         # Create toolkit with this agent as target (composition pattern)
         self.toolkit = AgentToolkit(target=self)
@@ -215,6 +219,9 @@ class BaseAgent:
 
                     if self.max_tokens:
                         api_params["max_tokens"] = self.max_tokens
+
+                    if self.reasoning_effort:
+                        api_params["reasoning_effort"] = self.reasoning_effort
 
                     # Add tools if agent has any registered
                     tool_schemas = self.get_tool_schemas()
@@ -619,6 +626,8 @@ class BaseAgent:
         lines.append(f"Temperature: {self.temperature}")
         if self.max_tokens:
             lines.append(f"Max Tokens: {self.max_tokens}")
+        if self.reasoning_effort:
+            lines.append(f"Reasoning Effort: {self.reasoning_effort}")
         if self.context_window:
             lines.append(f"Context Window: {self.context_window}")
 

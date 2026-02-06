@@ -4,7 +4,7 @@ Agent toolkit for registering and managing tools.
 import inspect
 import typing
 import warnings
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 from functools import wraps
 from .parser import function_to_tool_schema, parse_google_docstring
 from .models import ToolResult
@@ -24,7 +24,7 @@ _TYPE_TO_JSON_SCHEMA = {
 
 
 def _unwrap_type(annotation: Any) -> Any:
-    """Unwrap Optional / Union / generic aliases to the base type."""
+    """Unwrap Optional / Union / Literal / generic aliases to the base type."""
     origin = typing.get_origin(annotation)
 
     # Optional[X] is Union[X, None]
@@ -33,6 +33,21 @@ def _unwrap_type(annotation: Any) -> Any:
         if len(args) == 1:
             return _unwrap_type(args[0])
         return None  # multi-type Union — skip validation
+
+    # Literal["a", "b"] -> infer base type from values
+    if origin is Literal:
+        args = typing.get_args(annotation)
+        if args:
+            first = args[0]
+            if isinstance(first, str):
+                return str
+            elif isinstance(first, bool):  # Check bool before int
+                return bool
+            elif isinstance(first, int):
+                return int
+            elif isinstance(first, float):
+                return float
+        return str  # Default to str for empty Literal
 
     # list[X], dict[X, Y], typing.List[X], typing.Dict[X, Y]
     if origin in (list, dict):

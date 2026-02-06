@@ -3,7 +3,8 @@ Docstring parser for extracting tool metadata from Google-style docstrings.
 """
 import inspect
 import re
-from typing import Any, Callable, Dict, Optional
+import typing
+from typing import Any, Callable, Dict, Literal, Optional, Union, get_args, get_origin
 
 
 def parse_google_docstring(func: Callable) -> Dict[str, Any]:
@@ -138,6 +139,57 @@ def _map_python_type_to_json(type_str: str) -> str:
     return 'string'
 
 
+def _extract_literal_values(annotation: Any) -> Optional[tuple]:
+    """
+    Extract literal values from a Literal type annotation.
+
+    Args:
+        annotation: Type annotation to check
+
+    Returns:
+        Tuple of literal values if Literal type, None otherwise
+    """
+    origin = get_origin(annotation)
+
+    # Handle Optional[Literal[...]] = Union[Literal[...], None]
+    if origin is Union:
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return _extract_literal_values(args[0])
+        return None
+
+    # Check if it's a Literal type
+    if origin is Literal:
+        return get_args(annotation)
+
+    return None
+
+
+def _infer_type_from_literal(values: tuple) -> str:
+    """
+    Infer JSON schema type from Literal values.
+
+    Args:
+        values: Tuple of literal values
+
+    Returns:
+        JSON schema type string
+    """
+    if not values:
+        return 'string'
+
+    first = values[0]
+    if isinstance(first, str):
+        return 'string'
+    elif isinstance(first, bool):  # Must check bool before int (bool is subclass of int)
+        return 'boolean'
+    elif isinstance(first, int):
+        return 'integer'
+    elif isinstance(first, float):
+        return 'number'
+    return 'string'
+
+
 def function_to_tool_schema(func: Callable) -> Dict[str, Any]:
     """
     Convert a function with Google-style docstring to OpenAI tool schema.
@@ -155,6 +207,12 @@ def function_to_tool_schema(func: Callable) -> Dict[str, Any]:
     required_params = []
     properties = {}
 
+    # Try to get type hints (may fail for some edge cases)
+    try:
+        hints = typing.get_type_hints(func)
+    except Exception:
+        hints = {}
+
     for param_name, param in sig.parameters.items():
         if param_name == 'self':
             continue
@@ -162,10 +220,19 @@ def function_to_tool_schema(func: Callable) -> Dict[str, Any]:
         # Get parameter info from parsed docstring
         param_info = parsed['parameters'].get(param_name, {})
 
-        properties[param_name] = {
+        prop = {
             "type": param_info.get('type', 'string'),
             "description": param_info.get('description', '')
         }
+
+        # Check for Literal type annotation → add enum
+        if param_name in hints:
+            literal_values = _extract_literal_values(hints[param_name])
+            if literal_values:
+                prop["enum"] = list(literal_values)
+                prop["type"] = _infer_type_from_literal(literal_values)
+
+        properties[param_name] = prop
 
         # Check if parameter is required (no default value)
         if param.default == inspect.Parameter.empty:
