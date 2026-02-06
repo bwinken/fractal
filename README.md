@@ -335,8 +335,13 @@ agent = BaseAgent(
 | Method | Description |
 |--------|-------------|
 | `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
+| `run_sync(user_input, ...)` | Synchronous version of `run()` (no `asyncio.run()` needed) |
 | `reset()` | Clear conversation history |
 | `update_system_context(**kwargs)` | Merge new values into `system_context` (for template prompts) |
+| `add_message(role, content)` | Add a message to conversation history |
+| `get_conversation()` | Get a copy of conversation history (for saving) |
+| `set_conversation(messages)` | Restore conversation history (from saved) |
+| `conversation_length` | Property: number of messages (excluding system prompt) |
 | `add_tool(func, name=None, terminate=False)` | Register a standalone function as a tool |
 | `register_delegate(agent, tool_name=None, description=None, parameters=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |

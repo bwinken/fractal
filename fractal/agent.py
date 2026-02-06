@@ -611,6 +611,65 @@ class BaseAgent:
             self.tracing.end_run()
         return result
 
+    def run_sync(
+        self,
+        user_input: Union[str, dict, list, BaseModel],
+        max_iterations: int = 10,
+        max_retries: int = 3
+    ) -> AgentResult:
+        """
+        Run the agent synchronously (blocking).
+
+        Convenience wrapper around ``run()`` for scripts and simple use cases
+        where you don't want to deal with ``asyncio.run()``.
+
+        Args:
+            user_input (Union[str, dict, list, BaseModel]): User input
+            max_iterations (int): Maximum number of tool-calling iterations
+            max_retries (int): Maximum number of retries for API errors
+
+        Returns:
+            AgentResult containing the agent's final response
+
+        Example::
+
+            # Instead of:
+            result = asyncio.run(agent.run("hello"))
+
+            # You can write:
+            result = agent.run_sync("hello")
+        """
+        return asyncio.run(self.run(user_input, max_iterations, max_retries))
+
+    async def __call__(
+        self,
+        user_input: Union[str, dict, list, BaseModel],
+        max_iterations: int = 10,
+        max_retries: int = 3
+    ) -> AgentResult:
+        """
+        Call the agent directly (async).
+
+        Syntactic sugar for ``run()``. Allows more Pythonic usage.
+
+        Args:
+            user_input (Union[str, dict, list, BaseModel]): User input
+            max_iterations (int): Maximum number of tool-calling iterations
+            max_retries (int): Maximum number of retries for API errors
+
+        Returns:
+            AgentResult containing the agent's final response
+
+        Example::
+
+            # Instead of:
+            result = await agent.run("hello")
+
+            # You can write:
+            result = await agent("hello")
+        """
+        return await self.run(user_input, max_iterations, max_retries)
+
     def __str__(self) -> str:
         """
         Return a human-readable string representation of the agent.
@@ -684,6 +743,84 @@ class BaseAgent:
         self.messages = [
             {"role": "system", "content": self.system_prompt}
         ]
+
+    # ========================================================================
+    # Conversation management
+    # ========================================================================
+
+    def add_message(self, role: Literal["user", "assistant"], content: str) -> None:
+        """
+        Add a message to the conversation history.
+
+        Useful for injecting context or simulating prior conversation turns.
+
+        Args:
+            role: Message role ("user" or "assistant")
+            content: Message content
+
+        Example::
+
+            # Inject prior context
+            agent.add_message("user", "My name is Alice")
+            agent.add_message("assistant", "Nice to meet you, Alice!")
+
+            # Now the agent "remembers" this exchange
+            result = await agent.run("What's my name?")
+        """
+        self.messages.append({"role": role, "content": content})
+
+    def get_conversation(self) -> List[Dict[str, Any]]:
+        """
+        Get a copy of the current conversation history.
+
+        Returns a deep copy so modifications don't affect the agent's state.
+
+        Returns:
+            List of message dictionaries (excluding system prompt)
+
+        Example::
+
+            messages = agent.get_conversation()
+            # Save to file, database, etc.
+        """
+        import copy
+        # Return all messages except system prompt
+        return copy.deepcopy(self.messages[1:])
+
+    def set_conversation(self, messages: List[Dict[str, Any]]) -> None:
+        """
+        Replace the conversation history with saved messages.
+
+        The system prompt is preserved; only user/assistant messages are replaced.
+
+        Args:
+            messages: List of message dictionaries to restore
+
+        Example::
+
+            # Restore from saved state
+            agent.set_conversation(saved_messages)
+        """
+        # Keep system prompt, replace conversation
+        self.messages = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+        for msg in messages:
+            # Only add user/assistant messages (skip any system messages in input)
+            if msg.get("role") in ("user", "assistant", "tool"):
+                self.messages.append(msg)
+
+    @property
+    def conversation_length(self) -> int:
+        """
+        Get the number of messages in the conversation (excluding system prompt).
+
+        Returns:
+            Number of user/assistant/tool messages
+        """
+        if not hasattr(self, 'messages'):
+            return 0
+        return len(self.messages) - 1  # Exclude system prompt
 
     # ========================================================================
     # Context window management
