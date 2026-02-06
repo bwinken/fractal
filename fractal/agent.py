@@ -79,7 +79,6 @@ class BaseAgent:
                 Without placeholders, all runs append to the same file.
             context_window (int): Maximum token budget for API calls (falls back to CONTEXT_WINDOW env var).
                 When set, automatically trims old conversation history to fit within the limit.
-                The full history is preserved in self.messages; only the API call receives a trimmed view.
             system_context (dict): Context variables for template substitution in system_prompt.
                 Use ``{key}`` placeholders in the prompt and provide values here. Can be updated
                 later with ``update_system_context()``.
@@ -106,10 +105,7 @@ class BaseAgent:
         # Use provided client or create default async one
         self.client = client if client is not None else AsyncOpenAI()
 
-        # Conversation history (use resolved system_prompt)
-        self.messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self.system_prompt}
-        ]
+        # Tools are auto-discovered by AgentToolkit when target=self is passed
 
     @property
     def system_prompt(self) -> str:
@@ -159,21 +155,52 @@ class BaseAgent:
         self,
         user_input: Union[str, dict, list, BaseModel],
         max_iterations: int = 10,
-        max_retries: int = 3
+        max_retries: int = 3,
+        messages: Optional[List[Dict[str, Any]]] = None
     ) -> AgentResult:
         """
         Run the agent with a user input (async).
+
+        Each call to ``run()`` is **stateless** - the agent does not store conversation
+        history between calls. To continue a conversation, pass the previous messages
+        via the ``messages`` parameter.
 
         Args:
             user_input (Union[str, dict, list, BaseModel]): User input as string, dict, list, or Pydantic object
             max_iterations (int): Maximum number of tool-calling iterations
             max_retries (int): Maximum number of retries for API errors
+            messages (List[Dict[str, Any]]): Optional prior conversation history.
+                Only "user" and "assistant" roles are used.
+                Pass ``result.metadata['messages']`` from a previous run to continue.
 
         Returns:
-            AgentResult containing the agent's final response
+            AgentResult containing the agent's final response.
+            The ``metadata['messages']`` field contains the full conversation
+            (excluding system prompt) for continuing the conversation.
+
+        Example::
+
+            # Single request (stateless)
+            result = await agent.run("Hello")
+
+            # Continue conversation by passing previous messages
+            result1 = await agent.run("Hello")
+            history = result1.metadata['messages']
+
+            result2 = await agent.run("What did I just say?", messages=history)
+            # result2.metadata['messages'] now contains full conversation
         """
-        # Refresh system prompt (handles dynamic prompts via Callable or template)
-        self.messages[0]["content"] = self.system_prompt
+        # Build messages for this run (stateless - no self.messages)
+        run_messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+
+        # Inject prior messages if provided (user/assistant only)
+        if messages:
+            for msg in messages:
+                role = msg.get("role")
+                if role in ("user", "assistant", "tool"):
+                    run_messages.append(msg)
 
         # Convert input to string if necessary
         if isinstance(user_input, str):
@@ -188,7 +215,7 @@ class BaseAgent:
             content = str(user_input)
 
         # Add user message
-        self.messages.append({"role": "user", "content": content})
+        run_messages.append({"role": "user", "content": content})
 
         # Start tracing
         # Only start a new run if no run is active (i.e., this is the top-level agent).
@@ -213,7 +240,7 @@ class BaseAgent:
                     # Prepare API call parameters
                     api_params = {
                         "model": self.model,
-                        "messages": self._prepare_messages(),
+                        "messages": self._prepare_messages(run_messages),
                         "temperature": self.temperature,
                     }
 
@@ -248,7 +275,8 @@ class BaseAgent:
                                 success=False,
                                 metadata={
                                     "iterations": iteration,
-                                    "reason": "refusal"
+                                    "reason": "refusal",
+                                    "messages": run_messages[1:]
                                 }
                             )
                             # End tracing
@@ -261,7 +289,7 @@ class BaseAgent:
                         retry_count += 1
                         if retry_count < max_retries:
                             # Add a prompt to request actual content
-                            self.messages.append({
+                            run_messages.append({
                                 "role": "user",
                                 "content": "Please provide your actual response or use a tool."
                             })
@@ -273,7 +301,8 @@ class BaseAgent:
                                 success=False,
                                 metadata={
                                     "iterations": iteration,
-                                    "reason": "no_content_after_retries"
+                                    "reason": "no_content_after_retries",
+                                    "messages": run_messages[1:]
                                 }
                             )
                             # End tracing
@@ -301,7 +330,8 @@ class BaseAgent:
                             metadata={
                                 "iterations": iteration,
                                 "error": last_error,
-                                "error_type": "json_decode_error"
+                                "error_type": "json_decode_error",
+                                "messages": run_messages[1:]
                             }
                         )
                         # End tracing
@@ -335,7 +365,8 @@ class BaseAgent:
                                 metadata={
                                     "iterations": iteration,
                                     "error": error_str,
-                                    "error_type": "rate_limit"
+                                    "error_type": "rate_limit",
+                                    "messages": run_messages[1:]
                                 }
                             )
                             # End tracing
@@ -360,7 +391,8 @@ class BaseAgent:
                                 metadata={
                                     "iterations": iteration,
                                     "error": error_str,
-                                    "error_type": "timeout"
+                                    "error_type": "timeout",
+                                    "messages": run_messages[1:]
                                 }
                             )
                             # End tracing
@@ -378,7 +410,8 @@ class BaseAgent:
                         metadata={
                             "iterations": iteration,
                             "error": error_str,
-                            "error_type": "api_error"
+                            "error_type": "api_error",
+                            "messages": run_messages[1:]
                         }
                     )
                     # End tracing
@@ -407,7 +440,7 @@ class BaseAgent:
                         for tc in message.tool_calls
                     ]
 
-                self.messages.append(assistant_message)
+                run_messages.append(assistant_message)
 
                 # Check if agent wants to call tools
                 if message.tool_calls:
@@ -432,7 +465,7 @@ class BaseAgent:
                             })
                         except json.JSONDecodeError as e:
                             # Add error message for invalid tool arguments immediately
-                            self.messages.append({
+                            run_messages.append({
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": function_name,
@@ -482,7 +515,7 @@ class BaseAgent:
                                         tool_call_id=tool_call.id,
                                         parallel_group_id=parallel_group_id
                                     )
-                                self.messages.append({
+                                run_messages.append({
                                     "role": "tool",
                                     "tool_call_id": tool_call.id,
                                     "name": function_name,
@@ -529,7 +562,7 @@ class BaseAgent:
                                     tool_response = str(tool_result.content)
 
                             # Add tool result to messages
-                            self.messages.append({
+                            run_messages.append({
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": function_name,
@@ -546,7 +579,8 @@ class BaseAgent:
                                 metadata={
                                     "iterations": iteration,
                                     "model": self.model,
-                                    "terminated_by_tool": function_name
+                                    "terminated_by_tool": function_name,
+                                    "messages": run_messages[1:]
                                 }
                             )
                             # End tracing
@@ -565,7 +599,8 @@ class BaseAgent:
                     success=True,
                     metadata={
                         "iterations": iteration,
-                        "model": self.model
+                        "model": self.model,
+                        "messages": run_messages[1:]
                     }
                 )
 
@@ -585,7 +620,8 @@ class BaseAgent:
                     metadata={
                         "iterations": iteration,
                         "error": str(e),
-                        "error_type": "unexpected_error"
+                        "error_type": "unexpected_error",
+                        "messages": run_messages[1:]
                     }
                 )
                 # End tracing
@@ -602,7 +638,8 @@ class BaseAgent:
             success=False,
             metadata={
                 "iterations": iteration,
-                "reason": "max_iterations_reached"
+                "reason": "max_iterations_reached",
+                "messages": run_messages[1:]
             }
         )
         # End tracing
@@ -615,7 +652,8 @@ class BaseAgent:
         self,
         user_input: Union[str, dict, list, BaseModel],
         max_iterations: int = 10,
-        max_retries: int = 3
+        max_retries: int = 3,
+        messages: Optional[List[Dict[str, Any]]] = None
     ) -> AgentResult:
         """
         Run the agent synchronously (blocking).
@@ -627,6 +665,7 @@ class BaseAgent:
             user_input (Union[str, dict, list, BaseModel]): User input
             max_iterations (int): Maximum number of tool-calling iterations
             max_retries (int): Maximum number of retries for API errors
+            messages (List[Dict[str, Any]]): Optional prior conversation to inject
 
         Returns:
             AgentResult containing the agent's final response
@@ -639,13 +678,14 @@ class BaseAgent:
             # You can write:
             result = agent.run_sync("hello")
         """
-        return asyncio.run(self.run(user_input, max_iterations, max_retries))
+        return asyncio.run(self.run(user_input, max_iterations, max_retries, messages))
 
     async def __call__(
         self,
         user_input: Union[str, dict, list, BaseModel],
         max_iterations: int = 10,
-        max_retries: int = 3
+        max_retries: int = 3,
+        messages: Optional[List[Dict[str, Any]]] = None
     ) -> AgentResult:
         """
         Call the agent directly (async).
@@ -656,6 +696,7 @@ class BaseAgent:
             user_input (Union[str, dict, list, BaseModel]): User input
             max_iterations (int): Maximum number of tool-calling iterations
             max_retries (int): Maximum number of retries for API errors
+            messages (List[Dict[str, Any]]): Optional prior conversation to inject
 
         Returns:
             AgentResult containing the agent's final response
@@ -668,7 +709,7 @@ class BaseAgent:
             # You can write:
             result = await agent("hello")
         """
-        return await self.run(user_input, max_iterations, max_retries)
+        return await self.run(user_input, max_iterations, max_retries, messages)
 
     def __str__(self) -> str:
         """
@@ -735,92 +776,6 @@ class BaseAgent:
         """
         tool_count = len(self.get_tool_schemas())
         return f"<{self.__class__.__name__}(name='{self.name}', model='{self.model}', tools={tool_count})>"
-
-    def reset(self):
-        """
-        Reset the agent's conversation history.
-        """
-        self.messages = [
-            {"role": "system", "content": self.system_prompt}
-        ]
-
-    # ========================================================================
-    # Conversation management
-    # ========================================================================
-
-    def add_message(self, role: Literal["user", "assistant"], content: str) -> None:
-        """
-        Add a message to the conversation history.
-
-        Useful for injecting context or simulating prior conversation turns.
-
-        Args:
-            role: Message role ("user" or "assistant")
-            content: Message content
-
-        Example::
-
-            # Inject prior context
-            agent.add_message("user", "My name is Alice")
-            agent.add_message("assistant", "Nice to meet you, Alice!")
-
-            # Now the agent "remembers" this exchange
-            result = await agent.run("What's my name?")
-        """
-        self.messages.append({"role": role, "content": content})
-
-    def get_conversation(self) -> List[Dict[str, Any]]:
-        """
-        Get a copy of the current conversation history.
-
-        Returns a deep copy so modifications don't affect the agent's state.
-
-        Returns:
-            List of message dictionaries (excluding system prompt)
-
-        Example::
-
-            messages = agent.get_conversation()
-            # Save to file, database, etc.
-        """
-        import copy
-        # Return all messages except system prompt
-        return copy.deepcopy(self.messages[1:])
-
-    def set_conversation(self, messages: List[Dict[str, Any]]) -> None:
-        """
-        Replace the conversation history with saved messages.
-
-        The system prompt is preserved; only user/assistant messages are replaced.
-
-        Args:
-            messages: List of message dictionaries to restore
-
-        Example::
-
-            # Restore from saved state
-            agent.set_conversation(saved_messages)
-        """
-        # Keep system prompt, replace conversation
-        self.messages = [
-            {"role": "system", "content": self.system_prompt}
-        ]
-        for msg in messages:
-            # Only add user/assistant messages (skip any system messages in input)
-            if msg.get("role") in ("user", "assistant", "tool"):
-                self.messages.append(msg)
-
-    @property
-    def conversation_length(self) -> int:
-        """
-        Get the number of messages in the conversation (excluding system prompt).
-
-        Returns:
-            Number of user/assistant/tool messages
-        """
-        if not hasattr(self, 'messages'):
-            return 0
-        return len(self.messages) - 1  # Exclude system prompt
 
     # ========================================================================
     # Context window management
@@ -893,23 +848,26 @@ class BaseAgent:
                 i += 1
         return groups
 
-    def _prepare_messages(self) -> List[Dict[str, Any]]:
+    def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Prepare messages for an API call, trimming if context_window is set.
 
-        When context_window is None, returns self.messages as-is.
+        Args:
+            messages: The full message list (including system message at index 0)
+
+        When context_window is None, returns messages as-is.
         Otherwise, trims the oldest conversation turns to fit within the token
         budget while preserving:
         - The system message (always first)
         - The most recent messages (current turn)
         - Atomic tool-call groups (never split)
 
-        The internal self.messages list is never mutated.
+        The input messages list is never mutated.
         """
         if self.context_window is None:
-            return self.messages
+            return messages
 
         # Fixed costs
-        system_messages = [self.messages[0]]
+        system_messages = [messages[0]]
         system_tokens = self._estimate_message_tokens(system_messages)
 
         tool_schema_tokens = 0
@@ -921,10 +879,10 @@ class BaseAgent:
 
         available = self.context_window - system_tokens - tool_schema_tokens - response_reserve
         if available <= 0:
-            return self.messages
+            return messages
 
         # Group conversation messages into atomic units
-        conversation = self.messages[1:]
+        conversation = messages[1:]
         groups = self._group_messages(conversation)
 
         # Walk from newest to oldest, keep as many groups as fit

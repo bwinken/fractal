@@ -187,39 +187,39 @@ class TestPrepareMessages:
     def test_disabled_returns_all(self):
         """When context_window is None, all messages returned."""
         agent = SimpleAgent()
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "System prompt"},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi"},
         ]
-        result = agent._prepare_messages()
-        assert result is agent.messages  # Same object, not a copy
+        result = agent._prepare_messages(messages)
+        assert result is messages  # Same object, not a copy
 
     def test_system_message_always_kept(self):
         """System message is always the first message after trimming."""
         agent = SimpleAgent(context_window=500)
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "System prompt"},
             {"role": "user", "content": "old message " * 50},
             {"role": "assistant", "content": "old response " * 50},
             {"role": "user", "content": "new message"},
             {"role": "assistant", "content": "new response"},
         ]
-        result = agent._prepare_messages()
+        result = agent._prepare_messages(messages)
         assert result[0]["role"] == "system"
         assert result[0]["content"] == "System prompt"
 
     def test_newest_messages_preserved(self):
         """The most recent messages are kept, old ones trimmed."""
         agent = SimpleAgent(context_window=500)
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "System"},
             {"role": "user", "content": "very old " * 100},
             {"role": "assistant", "content": "very old response " * 100},
             {"role": "user", "content": "recent"},
             {"role": "assistant", "content": "recent response"},
         ]
-        result = agent._prepare_messages()
+        result = agent._prepare_messages(messages)
         # System + at least the recent messages
         assert result[0]["content"] == "System"
         contents = [m["content"] for m in result]
@@ -231,7 +231,7 @@ class TestPrepareMessages:
         # Budget must exceed response_reserve (4096) + system + tool schemas,
         # but be too small to fit all conversation messages.
         agent = SimpleAgent(context_window=4400)
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "S"},
             {"role": "user", "content": "turn1 " * 500},
             {"role": "assistant", "content": "resp1 " * 500},
@@ -240,7 +240,7 @@ class TestPrepareMessages:
             {"role": "user", "content": "turn3"},
             {"role": "assistant", "content": "resp3"},
         ]
-        result = agent._prepare_messages()
+        result = agent._prepare_messages(messages)
         contents = [m.get("content", "") for m in result]
         # turn1/resp1 are large (~1000 tokens), should be trimmed
         assert not any("turn1" in c for c in contents)
@@ -259,7 +259,7 @@ class TestPrepareMessages:
         tool_response_msg = {
             "role": "tool", "tool_call_id": "call_1", "name": "t", "content": "result"
         }
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "S"},
             {"role": "user", "content": "old " * 50},
             tool_call_msg,
@@ -267,7 +267,7 @@ class TestPrepareMessages:
             {"role": "user", "content": "new"},
             {"role": "assistant", "content": "new response"},
         ]
-        result = agent._prepare_messages()
+        result = agent._prepare_messages(messages)
         # If tool group is present, both assistant and tool response must be there
         roles = [m["role"] for m in result]
         if "tool" in roles:
@@ -276,33 +276,33 @@ class TestPrepareMessages:
             assert result[tool_idx - 1].get("tool_calls") is not None
 
     def test_does_not_mutate_original(self):
-        """self.messages is never modified by trimming."""
+        """Original messages list is never modified by trimming."""
         agent = SimpleAgent(context_window=300)
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "System"},
             {"role": "user", "content": "padding " * 100},
             {"role": "assistant", "content": "padding " * 100},
             {"role": "user", "content": "latest"},
         ]
-        original_len = len(agent.messages)
-        result = agent._prepare_messages()
+        original_len = len(messages)
+        result = agent._prepare_messages(messages)
         # Original unchanged
-        assert len(agent.messages) == original_len
+        assert len(messages) == original_len
         # Result may be shorter
         assert len(result) <= original_len
 
     def test_large_budget_keeps_all(self):
         """When context_window is very large, all messages are kept."""
         agent = SimpleAgent(context_window=1_000_000)
-        agent.messages = [
+        messages = [
             {"role": "system", "content": "System"},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi"},
             {"role": "user", "content": "Bye"},
             {"role": "assistant", "content": "Goodbye"},
         ]
-        result = agent._prepare_messages()
-        assert len(result) == len(agent.messages)
+        result = agent._prepare_messages(messages)
+        assert len(result) == len(messages)
 
 
 # ========================================================================

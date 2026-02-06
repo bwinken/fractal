@@ -229,7 +229,7 @@ async def main():
         print("=" * 60)
         result = await agent.run(question)
         print(f"\nA: {result.content}")
-        agent.reset()  # Clear history between questions
+        # No reset() needed - run() is stateless (each call starts fresh)
 
 
 if __name__ == "__main__":

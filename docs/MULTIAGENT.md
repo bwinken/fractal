@@ -469,15 +469,17 @@ class CoordinatorAgent(BaseAgent):
         self.register_delegate(self.agent_b)
 ```
 
-### Memory Accumulation
+### Memory Management
 
-**Problem:** Message history grows too large
+**Note:** Each `run()` call is **stateless** — the agent does not accumulate messages between calls.
 
-**Solution:** Reset agent state periodically:
+To continue a conversation, pass the previous messages explicitly:
 
 ```python
-# After processing
-agent.reset()  # Clears message history
+result1 = await agent.run("First question")
+history = result1.metadata['messages']
+
+result2 = await agent.run("Follow-up", messages=history)
 ```
 
 ## Summary

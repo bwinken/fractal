@@ -330,18 +330,30 @@ agent = BaseAgent(
 # Prompt recomputed on each run() call
 ```
 
+**Stateless Execution:**
+
+Each `run()` call is **stateless** — the agent does not store conversation history between calls.
+To continue a conversation, pass the previous messages via the `messages` parameter:
+
+```python
+# Single request
+result = await agent.run("Hello")
+
+# Continue conversation
+result1 = await agent.run("Hello")
+history = result1.metadata['messages']  # Save conversation
+
+result2 = await agent.run("What did I say?", messages=history)
+# result2.metadata['messages'] contains full conversation
+```
+
 **Methods:**
 
 | Method | Description |
 |--------|-------------|
-| `await run(user_input, max_iterations=10, max_retries=3)` | Run the agent and return `AgentResult` |
+| `await run(user_input, messages=None, ...)` | Run the agent (stateless). Pass `messages` to continue a conversation. |
 | `run_sync(user_input, ...)` | Synchronous version of `run()` (no `asyncio.run()` needed) |
-| `reset()` | Clear conversation history |
 | `update_system_context(**kwargs)` | Merge new values into `system_context` (for template prompts) |
-| `add_message(role, content)` | Add a message to conversation history |
-| `get_conversation()` | Get a copy of conversation history (for saving) |
-| `set_conversation(messages)` | Restore conversation history (from saved) |
-| `conversation_length` | Property: number of messages (excluding system prompt) |
 | `add_tool(func, name=None, terminate=False)` | Register a standalone function as a tool |
 | `register_delegate(agent, tool_name=None, description=None, parameters=None)` | Register an agent as a delegate tool |
 | `get_tools()` | Get all registered tools |
@@ -466,8 +478,10 @@ Returned by `agent.run()`.
 |-------|------|-------------|
 | `content` | `str \| dict \| list \| List[BaseModel] \| BaseModel` | Agent response |
 | `agent_name` | `str` | Name of the agent |
-| `metadata` | `dict \| None` | Additional metadata |
+| `metadata` | `dict \| None` | Contains `messages` (conversation history for continuation), `iterations`, `model`, etc. |
 | `success` | `bool` | Whether execution succeeded |
+
+**Continuing conversations:** Use `result.metadata['messages']` to get the conversation history, then pass it to the next `run()` call.
 
 ### ToolResult
 

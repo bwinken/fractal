@@ -231,38 +231,6 @@ async def test_malformed_tool_arguments():
         return False
 
 
-async def test_reset_functionality():
-    """Test 7: Agent reset after error."""
-    print("\n" + "=" * 70)
-    print("Test 7: Agent Reset After Error")
-    print("=" * 70)
-
-    try:
-        agent = ErrorTestAgent()
-
-        # Add some messages
-        await agent.run("test query", max_iterations=2)
-
-        initial_len = len(agent.messages)
-        print(f"Messages after run: {initial_len}")
-
-        # Reset
-        agent.reset()
-        after_reset_len = len(agent.messages)
-        print(f"Messages after reset: {after_reset_len}")
-
-        assert after_reset_len == 1, "Should only have system message"
-
-        print("\n[OK] Reset works correctly")
-        return True
-
-    except Exception as e:
-        print(f"\n[ERROR] {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 async def main():
     """Run all error handling tests."""
     print("\n" + "=" * 70)
@@ -284,7 +252,6 @@ async def main():
         ("Max Iterations", test_max_iterations),
         ("Empty Content", test_empty_content_handling),
         ("Malformed Arguments", test_malformed_tool_arguments),
-        ("Reset After Error", test_reset_functionality),
     ]
 
     for name, test_func in tests:

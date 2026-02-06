@@ -16,7 +16,6 @@ def test_static_prompt():
         system_prompt="You are a helpful assistant."
     )
     assert agent.system_prompt == "You are a helpful assistant."
-    assert agent.messages[0]["content"] == "You are a helpful assistant."
 
 
 def test_template_prompt_with_context():
@@ -27,7 +26,6 @@ def test_template_prompt_with_context():
         system_context={"user_name": "Alice", "pref": "concise"}
     )
     assert agent.system_prompt == "You are helping Alice. Preference: concise."
-    assert agent.messages[0]["content"] == "You are helping Alice. Preference: concise."
 
 
 def test_template_prompt_missing_context():
@@ -54,9 +52,8 @@ def test_callable_prompt():
         system_prompt=dynamic_prompt
     )
 
-    # Callable was already invoked during __init__ (to set messages[0])
+    # Note: callable may be invoked during init (e.g., by __repr__ or toolkit)
     init_count = call_count[0]
-    assert init_count > 0, "Callable should be invoked during init"
 
     # Each access invokes the callable again
     first_prompt = agent.system_prompt
@@ -116,16 +113,6 @@ def test_system_context_default_empty():
     assert agent.system_context == {}
 
 
-def test_messages_initialized_with_resolved_prompt():
-    """messages[0] should contain the resolved prompt at init."""
-    agent = BaseAgent(
-        name="Test",
-        system_prompt="Hello {name}",
-        system_context={"name": "World"}
-    )
-    assert agent.messages[0]["content"] == "Hello World"
-
-
 def test_callable_with_instance_method():
     """Callable prompt can be a bound method."""
     class MyAgent(BaseAgent):
@@ -154,6 +141,5 @@ if __name__ == "__main__":
     test_callable_prompt_with_closure()
     test_update_system_context()
     test_system_context_default_empty()
-    test_messages_initialized_with_resolved_prompt()
     test_callable_with_instance_method()
     print("All dynamic prompt tests passed!")

@@ -220,31 +220,6 @@ async def test_agent_info():
         return False
 
 
-async def test_agent_reset():
-    """Test that agent reset works."""
-    print("\n" + "=" * 70)
-    print("Test 6: Agent Reset")
-    print("=" * 70)
-
-    try:
-        agent = AsyncTestAgent()
-        initial_messages = len(agent.messages)
-
-        # Add a message
-        agent.messages.append({"role": "user", "content": "test"})
-        assert len(agent.messages) > initial_messages
-
-        # Reset
-        agent.reset()
-        assert len(agent.messages) == initial_messages
-
-        print("[OK] Agent reset works")
-        return True
-    except Exception as e:
-        print(f"[ERROR] {e}")
-        return False
-
-
 async def main():
     """Run all async tests."""
     print("\n" + "=" * 70)
@@ -259,7 +234,6 @@ async def main():
     results.append(await test_concurrent_tool_execution())
     results.append(await test_async_return_types())
     results.append(await test_agent_info())
-    results.append(await test_agent_reset())
 
     # Summary
     print("\n" + "=" * 70)
